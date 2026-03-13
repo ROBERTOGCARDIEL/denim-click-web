@@ -87,11 +87,6 @@ const isProductNew = (product) =>
   Date.now() - Number(product.createdAt || 0) <
     NEW_DAYS * 24 * 60 * 60 * 1000
 
-const createSelections = (products) =>
-  Object.fromEntries(
-    products.map((p) => [p.id, { size: p.sizes?.[0] || '', quantity: 0 }]),
-  )
-
 const buildEmptyProduct = () => ({
   name: '',
   category: 'Jeans',
@@ -873,7 +868,6 @@ function Storefront({
   removeFromCart,
   customer,
   setCustomer,
-  whatsappLink,
   confirmOrderAndSendWhatsApp,
   loading,
 }) {
@@ -1795,9 +1789,6 @@ export default function App() {
         .select('*')
         .order('id', { ascending: true })
 
-      console.log('SUPABASE DATA:', data)
-      console.log('SUPABASE ERROR:', error)
-
       if (error) {
         console.error('Error cargando productos:', error)
         alert('Error Supabase: ' + error.message)
@@ -1805,7 +1796,6 @@ export default function App() {
       }
 
       const mapped = (data || []).map(mapDbRowToProduct)
-      console.log('MAPPED PRODUCTS:', mapped)
       setProducts(mapped)
     } catch (e) {
       console.error(e)
@@ -1966,6 +1956,47 @@ export default function App() {
         }
       }
 
+      const orderPayload = {
+        customer_name: customer.name || '',
+        customer_phone: customer.phone || '',
+        customer_city: customer.city || '',
+        delivery: customer.delivery || '',
+        shipping_type: customer.shippingType || '',
+        shipping_address: customer.shippingAddress || '',
+        recipient_name: customer.recipientName || '',
+        recipient_phone: customer.recipientPhone || '',
+        postal_code: customer.postalCode || '',
+        ocurre_address: customer.ocurreAddress || '',
+        notes: customer.notes || '',
+        items_json: cart.map((item) => ({
+          product_id: item.product.id,
+          name: item.product.name,
+          size: item.size,
+          quantity: item.quantity,
+          unit_price: Number(item.product.prices[tier.key] || 0),
+          total:
+            Number(item.product.prices[tier.key] || 0) *
+            Number(item.quantity || 0),
+        })),
+        total_pieces: totalPieces,
+        subtotal: subtotal,
+        price_level: tier.label,
+        status: 'nuevo',
+        whatsapp_sent: false,
+      }
+
+      const { data: insertedOrder, error: orderError } = await supabase
+        .from('orders')
+        .insert([orderPayload])
+        .select()
+
+      if (orderError) {
+        console.error('Error guardando pedido:', orderError)
+        alert('No se pudo guardar el pedido en Supabase.')
+        setLoading(false)
+        return
+      }
+
       for (const item of cart) {
         const product = products.find((p) => p.id === item.product.id)
         if (!product) continue
@@ -1999,7 +2030,33 @@ export default function App() {
         }
       }
 
-      const link = whatsappLink
+      const items = cart.length
+        ? cart
+            .map(
+              (item, idx) =>
+                `${idx + 1}. ${item.product.name} | Talla: ${item.size} | Cantidad: ${item.quantity} pz | Precio: ${mxn(item.product.prices[tier.key])}`,
+            )
+            .join('%0A')
+        : 'Sin productos seleccionados'
+
+      const shippingDetails =
+        customer.delivery === 'Envíos'
+          ? customer.shippingType === 'Domicilio'
+            ? `%0A*Tipo de envío:* Domicilio%0A*Recibe:* ${customer.recipientName || '-'}%0A*Tel. receptor:* ${customer.recipientPhone || '-'}%0A*Dirección:* ${customer.shippingAddress || '-'}%0A*C.P.:* ${customer.postalCode || '-'}`
+            : `%0A*Tipo de envío:* Ocurre%0A*Dirección ocurre:* ${customer.ocurreAddress || '-'}`
+          : ''
+
+      const msg = `Hola, quiero solicitar un apartado.%0A%0A*Cliente:* ${customer.name || '-'}%0A*Teléfono:* ${customer.phone || '-'}%0A*Ciudad:* ${customer.city || '-'}%0A*Entrega:* ${customer.delivery || '-'}${shippingDetails}%0A*Notas:* ${customer.notes || '-'}%0A%0A*Productos:*%0A${items}%0A%0A*Total de piezas:* ${totalPieces}%0A*Nivel de precio:* ${tier.label}%0A*Subtotal estimado:* ${mxn(subtotal)}%0A%0APor favor confírmenme existencia y seguimiento.`
+
+      const link = `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`
+
+      if (insertedOrder?.[0]?.id) {
+        await supabase
+          .from('orders')
+          .update({ whatsapp_sent: true })
+          .eq('id', insertedOrder[0].id)
+      }
+
       await fetchProducts()
       setCart([])
 
@@ -2094,28 +2151,6 @@ export default function App() {
     await fetchProducts()
   }
 
-  const whatsappLink = useMemo(() => {
-    const items = cart.length
-      ? cart
-          .map(
-            (item, idx) =>
-              `${idx + 1}. ${item.product.name} | Talla: ${item.size} | Cantidad: ${item.quantity} pz | Precio: ${mxn(item.product.prices[tier.key])}`,
-          )
-          .join('%0A')
-      : 'Sin productos seleccionados'
-
-    const shippingDetails =
-      customer.delivery === 'Envíos'
-        ? customer.shippingType === 'Domicilio'
-          ? `%0A*Tipo de envío:* Domicilio%0A*Recibe:* ${customer.recipientName || '-'}%0A*Tel. receptor:* ${customer.recipientPhone || '-'}%0A*Dirección:* ${customer.shippingAddress || '-'}%0A*C.P.:* ${customer.postalCode || '-'}`
-          : `%0A*Tipo de envío:* Ocurre%0A*Dirección ocurre:* ${customer.ocurreAddress || '-'}`
-        : ''
-
-    const msg = `Hola, quiero solicitar un apartado.%0A%0A*Cliente:* ${customer.name || '-'}%0A*Teléfono:* ${customer.phone || '-'}%0A*Ciudad:* ${customer.city || '-'}%0A*Entrega:* ${customer.delivery || '-'}${shippingDetails}%0A*Notas:* ${customer.notes || '-'}%0A%0A*Productos:*%0A${items}%0A%0A*Total de piezas:* ${totalPieces}%0A*Nivel de precio:* ${tier.label}%0A*Subtotal estimado:* ${mxn(subtotal)}%0A%0APor favor confírmenme existencia y seguimiento.`
-
-    return `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`
-  }, [cart, customer, totalPieces, tier, subtotal])
-
   const handleLogin = () => {
     if (loginForm.username === ADMIN_USERNAME && loginForm.password === ADMIN_PASSWORD) {
       setIsAdminAuthenticated(true)
@@ -2165,17 +2200,17 @@ export default function App() {
               top: 16,
             }}
           >
-            {(route === 'admin' || isAdminAuthenticated) && (
-              <button type="button" style={styles.buttonSecondary} onClick={goToAdmin}>
-                <Lock size={16} />
-                Admin
-              </button>
-            )}
-
-            {isAdminAuthenticated && (
+            {route === 'admin' && isAdminAuthenticated && (
               <button type="button" style={styles.buttonSecondary} onClick={handleLogout}>
                 <LogOut size={16} />
                 Cerrar sesión
+              </button>
+            )}
+
+            {route === 'store' && (
+              <button type="button" style={styles.buttonSecondary} onClick={goToAdmin}>
+                <Lock size={16} />
+                Admin
               </button>
             )}
           </div>
@@ -2200,7 +2235,6 @@ export default function App() {
           removeFromCart={removeFromCart}
           customer={customer}
           setCustomer={setCustomer}
-          whatsappLink={whatsappLink}
           confirmOrderAndSendWhatsApp={confirmOrderAndSendWhatsApp}
           loading={loading}
         />
