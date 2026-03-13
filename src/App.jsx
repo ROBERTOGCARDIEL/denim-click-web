@@ -31,26 +31,19 @@ const ADMIN_PASSWORD = 'Denimzoa2026'
 const ADMIN_SESSION_KEY = 'apartados_admin_session_v1'
 const NEW_DAYS = 8
 
-const defaultProducts = [
-  {
-    id: 1,
-    name: 'Jeans 511 Azul Medio',
-    category: 'Jeans',
-    images: [
-      'https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=900&q=80',
-      'https://images.unsplash.com/photo-1516826957135-700dedea698c?auto=format&fit=crop&w=900&q=80',
-    ],
-    description: 'Corte moderno, mezclilla cómoda y excelente ajuste.',
-    prices: { base: 399, tier3: 349, tier10: 319 },
-    sizes: ['28', '30', '32', '34', '36'],
-    stock: { '28': 5, '30': 8, '32': 10, '34': 6, '36': 4 },
-    active: true,
-    isNew: true,
-    isOffer: false,
-    salesCount: 0,
-    createdAt: Date.now(),
-  },
-]
+const emptyCustomer = {
+  name: '',
+  phone: '',
+  city: '',
+  delivery: 'Envíos',
+  shippingType: 'Domicilio',
+  shippingAddress: '',
+  recipientName: '',
+  recipientPhone: '',
+  postalCode: '',
+  ocurreAddress: '',
+  notes: '',
+}
 
 const mxn = (n) =>
   new Intl.NumberFormat('es-MX', {
@@ -68,9 +61,7 @@ const tierFromPieces = (pieces) =>
 
 const progressMessage = (pieces) => {
   if (pieces >= 10) return 'Ya tienes el mejor precio disponible.'
-  if (pieces >= 3) {
-    return `Te faltan ${10 - pieces} pieza(s) para desbloquear el precio de 10+ piezas.`
-  }
+  if (pieces >= 3) return `Te faltan ${10 - pieces} pieza(s) para desbloquear el precio de 10+ piezas.`
   return `Te faltan ${3 - pieces} pieza(s) para desbloquear el precio de 3+ piezas.`
 }
 
@@ -84,8 +75,7 @@ const getCover = (product) => getProductImages(product)[0] || ''
 
 const isProductNew = (product) =>
   product.isNew &&
-  Date.now() - Number(product.createdAt || 0) <
-    NEW_DAYS * 24 * 60 * 60 * 1000
+  Date.now() - Number(product.createdAt || 0) < NEW_DAYS * 24 * 60 * 60 * 1000
 
 const buildEmptyProduct = () => ({
   name: '',
@@ -1753,19 +1743,7 @@ export default function App() {
   const [category, setCategory] = useState('Todas')
   const [selections, setSelections] = useState({})
   const [cart, setCart] = useState([])
-  const [customer, setCustomer] = useState({
-    name: '',
-    phone: '',
-    city: '',
-    delivery: 'Envíos',
-    shippingType: 'Domicilio',
-    shippingAddress: '',
-    recipientName: '',
-    recipientPhone: '',
-    postalCode: '',
-    ocurreAddress: '',
-    notes: '',
-  })
+  const [customer, setCustomer] = useState(emptyCustomer)
   const [route, setRoute] = useState(
     typeof window !== 'undefined' &&
       window.location.pathname.toLowerCase().includes('/admin')
@@ -1992,7 +1970,7 @@ export default function App() {
 
       if (orderError) {
         console.error('Error guardando pedido:', orderError)
-        alert('No se pudo guardar el pedido en Supabase.')
+        alert(`No se pudo guardar el pedido en Supabase: ${orderError.message}`)
         setLoading(false)
         return
       }
@@ -2030,14 +2008,12 @@ export default function App() {
         }
       }
 
-      const items = cart.length
-        ? cart
-            .map(
-              (item, idx) =>
-                `${idx + 1}. ${item.product.name} | Talla: ${item.size} | Cantidad: ${item.quantity} pz | Precio: ${mxn(item.product.prices[tier.key])}`,
-            )
-            .join('%0A')
-        : 'Sin productos seleccionados'
+      const items = cart
+        .map(
+          (item, idx) =>
+            `${idx + 1}. ${item.product.name} | Talla: ${item.size} | Cantidad: ${item.quantity} pz | Precio: ${mxn(item.product.prices[tier.key])}`,
+        )
+        .join('%0A')
 
       const shippingDetails =
         customer.delivery === 'Envíos'
@@ -2059,6 +2035,7 @@ export default function App() {
 
       await fetchProducts()
       setCart([])
+      setCustomer(emptyCustomer)
 
       setLoading(false)
       window.open(link, '_blank')
@@ -2163,11 +2140,6 @@ export default function App() {
     setLoginError('Usuario o contraseña incorrectos.')
   }
 
-  const goToAdmin = () => {
-    setRoute('admin')
-    if (typeof window !== 'undefined') window.history.replaceState({}, '', '/admin')
-  }
-
   const handleLogout = () => {
     setIsAdminAuthenticated(false)
     localStorage.removeItem(ADMIN_SESSION_KEY)
@@ -2204,13 +2176,6 @@ export default function App() {
               <button type="button" style={styles.buttonSecondary} onClick={handleLogout}>
                 <LogOut size={16} />
                 Cerrar sesión
-              </button>
-            )}
-
-            {route === 'store' && (
-              <button type="button" style={styles.buttonSecondary} onClick={goToAdmin}>
-                <Lock size={16} />
-                Admin
               </button>
             )}
           </div>
