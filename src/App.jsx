@@ -326,6 +326,13 @@ function Badge({ children, bg = '#f3f4f6', color = '#111827', border }) {
   )
 }
 
+function statusBadgeColors(status) {
+  if (status === 'confirmado') return { bg: '#dcfce7', color: '#166534', border: '1px solid #86efac' }
+  if (status === 'cancelado') return { bg: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' }
+  if (status === 'entregado') return { bg: '#dbeafe', color: '#1d4ed8', border: '1px solid #93c5fd' }
+  return { bg: '#f3f4f6', color: '#111827', border: '1px solid #d1d5db' }
+}
+
 function ProductGallery({ images, currentIndex, setCurrentIndex, title, onOpen }) {
   return (
     <div>
@@ -1004,7 +1011,9 @@ function Storefront({
 
               <select style={styles.input} value={category} onChange={(e) => setCategory(e.target.value)}>
                 {categories.map((c) => (
-                  <option key={c} value={c}>{c}</option>
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
                 ))}
               </select>
             </div>
@@ -1046,19 +1055,35 @@ function Storefront({
                   <div style={{ padding: 20 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
                       <div>
-                        <Badge bg="#fff" color="#374151" border="1px solid #d1d5db">{product.category}</Badge>
+                        <Badge bg="#fff" color="#374151" border="1px solid #d1d5db">
+                          {product.category}
+                        </Badge>
                         <h3 style={{ margin: '12px 0 0', fontSize: 28 }}>{product.name}</h3>
 
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
                           {topSellingIds.includes(product.id) && Number(product.salesCount || 0) > 0 ? (
-                            <Badge bg="#f59e0b" color="#fff">Más vendido</Badge>
+                            <Badge bg="#f59e0b" color="#fff">
+                              Más vendido
+                            </Badge>
                           ) : null}
-                          {isProductNew(product) ? <Badge bg="#0284c7" color="#fff">Nuevo</Badge> : null}
-                          {product.isOffer ? <Badge bg="#059669" color="#fff">Oferta</Badge> : null}
+                          {isProductNew(product) ? (
+                            <Badge bg="#0284c7" color="#fff">
+                              Nuevo
+                            </Badge>
+                          ) : null}
+                          {product.isOffer ? (
+                            <Badge bg="#059669" color="#fff">
+                              Oferta
+                            </Badge>
+                          ) : null}
                         </div>
                       </div>
 
-                      {availableSizes.length === 0 ? <Badge bg="#dc2626" color="#fff">Sin existencias</Badge> : null}
+                      {availableSizes.length === 0 ? (
+                        <Badge bg="#dc2626" color="#fff">
+                          Sin existencias
+                        </Badge>
+                      ) : null}
                     </div>
 
                     <p style={{ color: '#6b7280', lineHeight: 1.6 }}>{product.description}</p>
@@ -1219,7 +1244,10 @@ function Storefront({
                   </div>
                 ) : (
                   cart.map((item, index) => (
-                    <div key={`${item.product.id}-${item.size}-${index}`} style={{ border: '1px solid #e5e7eb', borderRadius: 24, padding: 16 }}>
+                    <div
+                      key={`${item.product.id}-${item.size}-${index}`}
+                      style={{ border: '1px solid #e5e7eb', borderRadius: 24, padding: 16 }}
+                    >
                       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
                         <div>
                           <h4 style={{ margin: 0, fontSize: 20 }}>{item.product.name}</h4>
@@ -1556,6 +1584,7 @@ function AdminPanel({
                 <div style={{ display: 'grid', gap: 12 }}>
                   {orders.map((order) => {
                     const items = Array.isArray(order.items_json) ? order.items_json : []
+                    const badgeColors = statusBadgeColors(order.status)
 
                     return (
                       <div
@@ -1591,7 +1620,11 @@ function AdminPanel({
                             <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
                               {order.total_pieces || 0} pieza(s)
                             </p>
-                            <Badge bg="#f3f4f6" color="#111827" border="1px solid #d1d5db">
+                            <Badge
+                              bg={badgeColors.bg}
+                              color={badgeColors.color}
+                              border={badgeColors.border}
+                            >
                               {order.status || 'nuevo'}
                             </Badge>
                           </div>
@@ -1977,6 +2010,56 @@ export default function App() {
   }
 
   async function updateOrderStatus(orderId, nextStatus) {
+    const order = orders.find((o) => o.id === orderId)
+    if (!order) {
+      alert('No se encontró el pedido.')
+      return
+    }
+
+    if (nextStatus === 'cancelado') {
+      const items = Array.isArray(order.items_json) ? order.items_json : []
+
+      for (const item of items) {
+        const { data: productRow, error: productReadError } = await supabase
+          .from('products')
+          .select('*')
+          .eq('id', item.product_id)
+          .single()
+
+        if (productReadError) {
+          console.error('Error leyendo producto para devolución de stock:', productReadError)
+          alert(`No se pudo leer el producto ${item.name} para devolver stock.`)
+          return
+        }
+
+        const product = mapDbRowToProduct(productRow)
+
+        const nextStock = {
+          ...product.stock,
+          [item.size]: Number(product.stock?.[item.size] || 0) + Number(item.quantity || 0),
+        }
+
+        const nextTotalStock = Object.values(nextStock).reduce(
+          (sum, n) => sum + Number(n || 0),
+          0
+        )
+
+        const { error: stockError } = await supabase
+          .from('products')
+          .update({
+            stock_json: nextStock,
+            stock: nextTotalStock,
+          })
+          .eq('id', item.product_id)
+
+        if (stockError) {
+          console.error('Error devolviendo stock:', stockError)
+          alert(`No se pudo devolver stock del producto ${item.name}.`)
+          return
+        }
+      }
+    }
+
     const { error } = await supabase
       .from('orders')
       .update({ status: nextStatus })
@@ -1984,11 +2067,55 @@ export default function App() {
 
     if (error) {
       console.error('Error actualizando estado del pedido:', error)
-      alert('No se pudo actualizar el estado del pedido.')
+      alert(`No se pudo actualizar el estado del pedido: ${error.message}`)
       return
     }
 
+    await fetchProducts()
     await fetchOrders()
+
+    const rawPhone = String(order.customer_phone || '').replace(/\D/g, '')
+    let customerPhone = rawPhone
+
+    if (customerPhone.length === 10) {
+      customerPhone = `52${customerPhone}`
+    }
+
+    const items = Array.isArray(order.items_json) ? order.items_json : []
+    const itemsText = items.length
+      ? items
+          .map(
+            (item, idx) =>
+              `${idx + 1}. ${item.name} | Talla: ${item.size} | ${item.quantity} pz`
+          )
+          .join('%0A')
+      : 'Sin productos'
+
+    let message = ''
+
+    if (nextStatus === 'confirmado') {
+      message =
+        `Hola ${order.customer_name || ''}, tu pedido #${order.id} ha sido *CONFIRMADO*.%0A%0A` +
+        `*Productos:*%0A${itemsText}%0A%0A` +
+        `*Total:* ${mxn(order.subtotal || 0)}%0A` +
+        `Gracias por tu compra en ${STORE_NAME}.`
+    } else if (nextStatus === 'cancelado') {
+      message =
+        `Hola ${order.customer_name || ''}, tu pedido #${order.id} ha sido *CANCELADO*.%0A%0A` +
+        `Si deseas, podemos ayudarte a generar uno nuevo.%0A%0A` +
+        `Gracias por contactar a ${STORE_NAME}.`
+    } else if (nextStatus === 'entregado') {
+      message =
+        `Hola ${order.customer_name || ''}, tu pedido #${order.id} ha sido marcado como *ENTREGADO*.%0A%0A` +
+        `Gracias por tu compra en ${STORE_NAME}.`
+    }
+
+    if (message && customerPhone) {
+      const waUrl = `https://wa.me/${customerPhone}?text=${message}`
+      window.open(waUrl, '_blank')
+    } else {
+      alert(`Pedido #${orderId} actualizado a: ${nextStatus}`)
+    }
   }
 
   useEffect(() => {
