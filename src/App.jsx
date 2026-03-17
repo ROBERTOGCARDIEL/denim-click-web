@@ -61,7 +61,9 @@ const tierFromPieces = (pieces) =>
 
 const progressMessage = (pieces) => {
   if (pieces >= 10) return 'Ya tienes el mejor precio disponible.'
-  if (pieces >= 3) return `Te faltan ${10 - pieces} pieza(s) para desbloquear el precio de 10+ piezas.`
+  if (pieces >= 3) {
+    return `Te faltan ${10 - pieces} pieza(s) para desbloquear el precio de 10+ piezas.`
+  }
   return `Te faltan ${3 - pieces} pieza(s) para desbloquear el precio de 3+ piezas.`
 }
 
@@ -1439,6 +1441,11 @@ function AdminPanel({
   toggleActive,
   deleteProduct,
   loading,
+  orders,
+  ordersLoading,
+  ordersError,
+  reloadOrders,
+  updateOrderStatus,
 }) {
   const isMobile = useIsMobile()
 
@@ -1505,6 +1512,164 @@ function AdminPanel({
                 saveLabel="Agregar producto"
                 loading={loading}
               />
+            </div>
+
+            <div style={{ ...styles.card, padding: 24 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  alignItems: 'center',
+                  marginBottom: 16,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 24 }}>Pedidos</h3>
+                  <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+                    Solicitudes guardadas desde la tienda online.
+                  </p>
+                </div>
+
+                <button type="button" style={styles.buttonSecondary} onClick={reloadOrders}>
+                  Recargar pedidos
+                </button>
+              </div>
+
+              {ordersLoading ? (
+                <p>Cargando pedidos...</p>
+              ) : ordersError ? (
+                <p style={{ color: '#dc2626', fontWeight: 600 }}>{ordersError}</p>
+              ) : orders.length === 0 ? (
+                <div
+                  style={{
+                    border: '1px dashed #d1d5db',
+                    borderRadius: 20,
+                    padding: 20,
+                    color: '#6b7280',
+                  }}
+                >
+                  Aún no hay pedidos registrados.
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 12 }}>
+                  {orders.map((order) => {
+                    const items = Array.isArray(order.items_json) ? order.items_json : []
+
+                    return (
+                      <div
+                        key={order.id}
+                        style={{
+                          border: '1px solid #e5e7eb',
+                          borderRadius: 20,
+                          padding: 16,
+                          background: '#fff',
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            gap: 12,
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: 20 }}>Pedido #{order.id}</h4>
+                            <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+                              {order.customer_name || '-'} · {order.customer_phone || '-'}
+                            </p>
+                            <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+                              {order.customer_city || '-'}
+                            </p>
+                          </div>
+
+                          <div style={{ textAlign: 'right' }}>
+                            <p style={{ margin: 0, fontWeight: 700 }}>{mxn(order.subtotal || 0)}</p>
+                            <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+                              {order.total_pieces || 0} pieza(s)
+                            </p>
+                            <Badge bg="#f3f4f6" color="#111827" border="1px solid #d1d5db">
+                              {order.status || 'nuevo'}
+                            </Badge>
+                          </div>
+                        </div>
+
+                        <div style={{ marginTop: 12 }}>
+                          <p style={{ margin: 0, fontSize: 14, color: '#6b7280' }}>
+                            Nivel: {order.price_level || '-'}
+                          </p>
+                          <p style={{ margin: '6px 0 0', fontSize: 14, color: '#6b7280' }}>
+                            Entrega: {order.delivery || '-'}
+                          </p>
+                          <p style={{ margin: '6px 0 0', fontSize: 14, color: '#6b7280' }}>
+                            WhatsApp enviado: {order.whatsapp_sent ? 'Sí' : 'No'}
+                          </p>
+                        </div>
+
+                        <div
+                          style={{
+                            marginTop: 12,
+                            padding: 12,
+                            borderRadius: 16,
+                            background: '#f9fafb',
+                            border: '1px solid #e5e7eb',
+                          }}
+                        >
+                          <p style={{ marginTop: 0, fontWeight: 700 }}>Productos:</p>
+                          {items.length === 0 ? (
+                            <p style={{ margin: 0, color: '#6b7280' }}>Sin productos</p>
+                          ) : (
+                            <div style={{ display: 'grid', gap: 6 }}>
+                              {items.map((item, idx) => (
+                                <div key={idx} style={{ fontSize: 14, color: '#374151' }}>
+                                  {item.name} · Talla {item.size} · {item.quantity} pz · {mxn(item.total || 0)}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                          <button
+                            type="button"
+                            style={styles.buttonSecondary}
+                            onClick={() => updateOrderStatus(order.id, 'nuevo')}
+                          >
+                            Nuevo
+                          </button>
+
+                          <button
+                            type="button"
+                            style={styles.buttonSecondary}
+                            onClick={() => updateOrderStatus(order.id, 'confirmado')}
+                          >
+                            Confirmar
+                          </button>
+
+                          <button
+                            type="button"
+                            style={styles.buttonSecondary}
+                            onClick={() => updateOrderStatus(order.id, 'cancelado')}
+                          >
+                            Cancelar
+                          </button>
+
+                          <button
+                            type="button"
+                            style={styles.buttonSecondary}
+                            onClick={() => updateOrderStatus(order.id, 'entregado')}
+                          >
+                            Entregado
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </div>
 
@@ -1760,6 +1925,10 @@ export default function App() {
   const [newProductDraft, setNewProductDraft] = useState(buildEmptyProduct())
   const [loading, setLoading] = useState(false)
 
+  const [orders, setOrders] = useState([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+  const [ordersError, setOrdersError] = useState('')
+
   async function fetchProducts() {
     try {
       const { data, error } = await supabase
@@ -1781,8 +1950,50 @@ export default function App() {
     }
   }
 
+  async function fetchOrders() {
+    try {
+      setOrdersLoading(true)
+      setOrdersError('')
+
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error cargando pedidos:', error)
+        setOrdersError(error.message || 'No se pudieron cargar los pedidos')
+        setOrdersLoading(false)
+        return
+      }
+
+      setOrders(data || [])
+      setOrdersLoading(false)
+    } catch (e) {
+      console.error(e)
+      setOrdersError(e.message || 'Error inesperado cargando pedidos')
+      setOrdersLoading(false)
+    }
+  }
+
+  async function updateOrderStatus(orderId, nextStatus) {
+    const { error } = await supabase
+      .from('orders')
+      .update({ status: nextStatus })
+      .eq('id', orderId)
+
+    if (error) {
+      console.error('Error actualizando estado del pedido:', error)
+      alert('No se pudo actualizar el estado del pedido.')
+      return
+    }
+
+    await fetchOrders()
+  }
+
   useEffect(() => {
     fetchProducts()
+    fetchOrders()
   }, [])
 
   useEffect(() => {
@@ -1953,8 +2164,7 @@ export default function App() {
           quantity: item.quantity,
           unit_price: Number(item.product.prices[tier.key] || 0),
           total:
-            Number(item.product.prices[tier.key] || 0) *
-            Number(item.quantity || 0),
+            Number(item.product.prices[tier.key] || 0) * Number(item.quantity || 0),
         })),
         total_pieces: totalPieces,
         subtotal: subtotal,
@@ -2034,6 +2244,7 @@ export default function App() {
       }
 
       await fetchProducts()
+      await fetchOrders()
       setCart([])
       setCustomer(emptyCustomer)
 
@@ -2222,6 +2433,11 @@ export default function App() {
           toggleActive={toggleActive}
           deleteProduct={deleteProduct}
           loading={loading}
+          orders={orders}
+          ordersLoading={ordersLoading}
+          ordersError={ordersError}
+          reloadOrders={fetchOrders}
+          updateOrderStatus={updateOrderStatus}
         />
       ) : (
         <AdminLogin
