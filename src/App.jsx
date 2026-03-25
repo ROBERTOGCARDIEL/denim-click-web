@@ -4,21 +4,18 @@ import {
   Menu,
   X,
   ChevronRight,
-  ChevronDown,
   ShoppingBag,
-  Filter,
   LogOut,
   Lock,
   User,
   Eye,
   EyeOff,
   Plus,
+  Minus,
   Pencil,
   Trash2,
   Save,
   Image as ImageIcon,
-  Tag,
-  Boxes,
   Settings,
 } from 'lucide-react'
 import { supabase } from './supabase'
@@ -28,8 +25,9 @@ const STORE_LOGO = '/logo-denim-click.png'
 const ADMIN_USERNAME = 'Denim'
 const ADMIN_PASSWORD = 'Denimzoa2026'
 const ADMIN_SESSION_KEY = 'apartados_admin_session_v1'
+const WHATSAPP_NUMBER = '525572665573'
 
-const AUDIENCES = ['Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta']
+const AUDIENCES = ['Todo', 'Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta']
 
 const BASE_CATEGORY_MAP = {
   Hombre: ['Jeans', 'Playeras', 'Sudaderas', 'Chamarras', 'Shorts', 'Polo', 'Camisas', 'Suéter'],
@@ -39,7 +37,7 @@ const BASE_CATEGORY_MAP = {
   Oferta: ['Jeans', 'Playeras', 'Sudaderas', 'Chamarras', 'Shorts', 'Polo', 'Camisas', 'Suéter', 'Accesorios'],
 }
 
-const JEANS_SUBCATEGORIES = ['Straight', 'Slim', 'Skinny', 'Regular', 'Relaxed', 'Baggy']
+const JEANS_FITS = ['Straight', 'Slim', 'Skinny', 'Regular', 'Relaxed', 'Baggy']
 
 const BRANDS = [
   'Levi’s',
@@ -102,6 +100,29 @@ function mxn(n) {
   return `$${Number(n || 0).toLocaleString('es-MX')}`
 }
 
+function uniqueValues(items) {
+  return [...new Set(items.filter(Boolean))]
+}
+
+function getAudienceCategories(audience, customCategories = []) {
+  if (audience === 'Todo') {
+    return uniqueValues([...Object.values(BASE_CATEGORY_MAP).flat(), ...customCategories])
+  }
+  return uniqueValues([...(BASE_CATEGORY_MAP[audience] || []), ...customCategories])
+}
+
+function getJeansFits(customSubcategories = []) {
+  return uniqueValues([...JEANS_FITS, ...customSubcategories])
+}
+
+function getCover(product) {
+  return Array.isArray(product.images) && product.images.length ? product.images[0] : ''
+}
+
+function totalStock(stock) {
+  return Object.values(stock || {}).reduce((sum, n) => sum + Number(n || 0), 0)
+}
+
 function normalizeProduct(row) {
   let images = []
   if (Array.isArray(row.images_json)) {
@@ -139,11 +160,11 @@ function normalizeProduct(row) {
     images,
     sizes,
     stock,
-    stock_total: Number(row.stock || 0),
-    price: Number(row.price_base ?? row.price ?? DEFAULT_PRICE_BY_CATEGORY[row.category] ?? 0),
+    stock_total: Number(row.stock || totalStock(stock)),
+    price: Number(row.price_base ?? row.price ?? 0),
     price_base: Number(row.price_base ?? row.price ?? 0),
-    price_tier3: Number(row.price_tier3 ?? 0),
-    price_tier10: Number(row.price_tier10 ?? 0),
+    price_tier3: Number(row.price_tier3 ?? row.price_base ?? row.price ?? 0),
+    price_tier10: Number(row.price_tier10 ?? row.price_base ?? row.price ?? 0),
     special_price: Number(row.special_price ?? 0),
     active: row.active !== false,
     is_new: row.is_new !== false,
@@ -154,8 +175,7 @@ function normalizeProduct(row) {
 }
 
 function productToDb(product) {
-  const totalStock = Object.values(product.stock || {}).reduce((sum, n) => sum + Number(n || 0), 0)
-
+  const stockTotal = totalStock(product.stock)
   return {
     name: product.name,
     description: product.description,
@@ -166,7 +186,7 @@ function productToDb(product) {
     images: product.images?.[0] || '',
     images_json: product.images || [],
     sizes: (product.sizes || []).join(','),
-    stock: totalStock,
+    stock: stockTotal,
     stock_json: product.stock || {},
     price: Number(product.price || 0),
     price_base: Number(product.price || 0),
@@ -192,10 +212,10 @@ function buildEmptyProduct() {
     images: [],
     sizes: ['28', '30', '32'],
     stock: { 28: 0, 30: 0, 32: 0 },
-    price: DEFAULT_PRICE_BY_CATEGORY['Jeans'],
-    price_tier3: DEFAULT_PRICE_BY_CATEGORY['Jeans'],
-    price_tier10: DEFAULT_PRICE_BY_CATEGORY['Jeans'],
-    special_price: DEFAULT_SPECIAL_PRICE_BY_CATEGORY['Jeans'],
+    price: DEFAULT_PRICE_BY_CATEGORY.Jeans,
+    price_tier3: DEFAULT_PRICE_BY_CATEGORY.Jeans,
+    price_tier10: DEFAULT_PRICE_BY_CATEGORY.Jeans,
+    special_price: DEFAULT_SPECIAL_PRICE_BY_CATEGORY.Jeans,
     active: true,
     is_new: true,
     is_offer: false,
@@ -207,28 +227,30 @@ function buildEmptyProduct() {
   }
 }
 
-function uniqueValues(items) {
-  return [...new Set(items.filter(Boolean))]
+function currentTier(totalPieces) {
+  if (totalPieces >= 10) return { key: 'price_tier10', label: 'Precio 10+ piezas' }
+  if (totalPieces >= 3) return { key: 'price_tier3', label: 'Precio 3+ piezas' }
+  return { key: 'price', label: 'Precio normal' }
 }
 
-function getAudienceCategories(audience, customCategories = []) {
-  const base = BASE_CATEGORY_MAP[audience] || []
-  return uniqueValues([...base, ...customCategories])
-}
-
-function getAllVisibleCategories(customCategories = []) {
-  return uniqueValues([...Object.values(BASE_CATEGORY_MAP).flat(), ...customCategories])
-}
-
-function getCategorySubcategories(category, customSubs = []) {
-  if (category === 'Jeans') {
-    return uniqueValues([...JEANS_SUBCATEGORIES, ...customSubs])
-  }
-  return uniqueValues([...customSubs])
-}
-
-function getCover(product) {
-  return Array.isArray(product.images) && product.images.length ? product.images[0] : ''
+function Badge({ children, bg = '#f3f4f6', color = '#111827', border = 'none' }) {
+  return (
+    <span
+      style={{
+        fontSize: 12,
+        borderRadius: 999,
+        padding: '5px 10px',
+        background: bg,
+        color,
+        border,
+        fontWeight: 700,
+        display: 'inline-flex',
+        alignItems: 'center',
+      }}
+    >
+      {children}
+    </span>
+  )
 }
 
 const styles = {
@@ -295,26 +317,151 @@ const styles = {
   },
 }
 
+function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) {
+  if (!open || !product) return null
+
+  const images = product.images || []
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,.8)',
+        zIndex: 80,
+        display: 'grid',
+        placeItems: 'center',
+        padding: 18,
+      }}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        style={{
+          position: 'absolute',
+          top: 16,
+          right: 16,
+          background: '#fff',
+          border: 'none',
+          borderRadius: 999,
+          padding: '8px 12px',
+          cursor: 'pointer',
+        }}
+      >
+        ✕
+      </button>
+
+      <div style={{ width: '100%', maxWidth: 980 }}>
+        <div style={{ color: '#fff', marginBottom: 12, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <strong>{product.name}</strong>
+          <span>
+            {imageIndex + 1} / {images.length}
+          </span>
+        </div>
+
+        <div
+          style={{
+            position: 'relative',
+            borderRadius: 24,
+            overflow: 'hidden',
+            background: 'rgba(255,255,255,.08)',
+          }}
+        >
+          <img
+            src={images[imageIndex]}
+            alt={product.name}
+            style={{ width: '100%', maxHeight: '78vh', objectFit: 'contain' }}
+          />
+
+          {images.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() => setImageIndex((p) => (p - 1 + images.length) % images.length)}
+                style={{
+                  position: 'absolute',
+                  left: 10,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: '#fff',
+                  border: 'none',
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  padding: '10px 14px',
+                }}
+              >
+                ‹
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setImageIndex((p) => (p + 1) % images.length)}
+                style={{
+                  position: 'absolute',
+                  right: 10,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: '#fff',
+                  border: 'none',
+                  borderRadius: 999,
+                  cursor: 'pointer',
+                  padding: '10px 14px',
+                }}
+              >
+                ›
+              </button>
+            </>
+          )}
+        </div>
+
+        {images.length > 1 && (
+          <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(6, 1fr)', marginTop: 12 }}>
+            {images.map((img, idx) => (
+              <button
+                key={idx}
+                type="button"
+                onClick={() => setImageIndex(idx)}
+                style={{
+                  padding: 0,
+                  border: idx === imageIndex ? '2px solid #fff' : '1px solid rgba(255,255,255,.25)',
+                  borderRadius: 12,
+                  overflow: 'hidden',
+                  background: 'transparent',
+                  cursor: 'pointer',
+                }}
+              >
+                <img src={img} alt={`${product.name}-${idx}`} style={{ width: '100%', height: 64, objectFit: 'cover' }} />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function DesktopMegaMenu({
   activeAudience,
-  setActiveAudience,
+  closeMenu,
   products,
   setStoreAudience,
   setStoreCategory,
-  setStoreSubcategory,
   setStoreBrand,
-  closeMenu,
+  setStoreFit,
   customCategories,
-  customSubcategories,
+  customFits,
 }) {
-  const categories = getAudienceCategories(activeAudience, customCategories)
-  const categoryBrands = uniqueValues(
-    products
-      .filter((p) => p.audience === activeAudience || activeAudience === 'Oferta')
-      .map((p) => p.brand)
-  )
+  const [hoveredCategory, setHoveredCategory] = useState('')
 
-  const brands = uniqueValues([...BRANDS, ...categoryBrands])
+  const categories = getAudienceCategories(activeAudience, customCategories).filter((c) => c !== 'Playera')
+  const brands = uniqueValues([
+    ...BRANDS,
+    ...products
+      .filter((p) => (activeAudience === 'Todo' ? true : p.audience === activeAudience))
+      .map((p) => p.brand),
+  ])
+
+  const fitList = getJeansFits(customFits)
 
   return (
     <div
@@ -334,7 +481,7 @@ function DesktopMegaMenu({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+            gridTemplateColumns: hoveredCategory === 'Jeans' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr',
             gap: 40,
           }}
         >
@@ -345,10 +492,12 @@ function DesktopMegaMenu({
                 <button
                   key={cat}
                   type="button"
+                  onMouseEnter={() => setHoveredCategory(cat)}
                   onClick={() => {
+                    if (cat === 'Jeans') return
                     setStoreAudience(activeAudience)
                     setStoreCategory(cat)
-                    setStoreSubcategory('Todas')
+                    setStoreFit('Todos')
                     setStoreBrand('Todas')
                     closeMenu()
                   }}
@@ -360,43 +509,49 @@ function DesktopMegaMenu({
                     cursor: 'pointer',
                     padding: 0,
                     fontSize: 16,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
                   }}
                 >
-                  {cat}
+                  <span>{cat}</span>
+                  {cat === 'Jeans' ? <ChevronRight size={16} /> : null}
                 </button>
               ))}
             </div>
           </div>
 
-          <div>
-            <h4 style={{ marginTop: 0, fontSize: 18 }}>Subcategorías</h4>
-            <div style={{ display: 'grid', gap: 12 }}>
-              {getCategorySubcategories('Jeans', customSubcategories).map((sub) => (
-                <button
-                  key={sub}
-                  type="button"
-                  onClick={() => {
-                    setStoreAudience(activeAudience)
-                    setStoreCategory('Jeans')
-                    setStoreSubcategory(sub)
-                    setStoreBrand('Todas')
-                    closeMenu()
-                  }}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#d1d5db',
-                    textAlign: 'left',
-                    cursor: 'pointer',
-                    padding: 0,
-                    fontSize: 16,
-                  }}
-                >
-                  {sub}
-                </button>
-              ))}
+          {hoveredCategory === 'Jeans' && (
+            <div>
+              <h4 style={{ marginTop: 0, fontSize: 18 }}>Fit</h4>
+              <div style={{ display: 'grid', gap: 12 }}>
+                {fitList.map((fit) => (
+                  <button
+                    key={fit}
+                    type="button"
+                    onClick={() => {
+                      setStoreAudience(activeAudience)
+                      setStoreCategory('Jeans')
+                      setStoreFit(fit)
+                      setStoreBrand('Todas')
+                      closeMenu()
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#d1d5db',
+                      textAlign: 'left',
+                      cursor: 'pointer',
+                      padding: 0,
+                      fontSize: 16,
+                    }}
+                  >
+                    {fit}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           <div>
             <h4 style={{ marginTop: 0, fontSize: 18 }}>Marcas</h4>
@@ -407,8 +562,8 @@ function DesktopMegaMenu({
                   type="button"
                   onClick={() => {
                     setStoreAudience(activeAudience)
-                    setStoreCategory('Todas')
-                    setStoreSubcategory('Todas')
+                    setStoreCategory('Todos')
+                    setStoreFit('Todos')
                     setStoreBrand(brand)
                     closeMenu()
                   }}
@@ -435,8 +590,8 @@ function DesktopMegaMenu({
                 type="button"
                 onClick={() => {
                   setStoreAudience(activeAudience)
-                  setStoreCategory('Todas')
-                  setStoreSubcategory('Todas')
+                  setStoreCategory('Todos')
+                  setStoreFit('Todos')
                   setStoreBrand('Todas')
                   closeMenu()
                 }}
@@ -451,21 +606,6 @@ function DesktopMegaMenu({
                 }}
               >
                 Ver todo {activeAudience}
-              </button>
-
-              <button
-                type="button"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#d1d5db',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  padding: 0,
-                  fontSize: 16,
-                }}
-              >
-                Lo más reciente
               </button>
 
               <button
@@ -496,42 +636,37 @@ function MobileMenu({
   products,
   setStoreAudience,
   setStoreCategory,
-  setStoreSubcategory,
   setStoreBrand,
+  setStoreFit,
   customCategories,
-  customSubcategories,
+  customFits,
 }) {
   const [step, setStep] = useState('audiences')
   const [selectedAudience, setSelectedAudience] = useState('Hombre')
-  const [selectedCategory, setSelectedCategory] = useState('Todas')
+  const [selectedCategory, setSelectedCategory] = useState('')
 
   useEffect(() => {
     if (!open) {
       setStep('audiences')
       setSelectedAudience('Hombre')
-      setSelectedCategory('Todas')
+      setSelectedCategory('')
     }
   }, [open])
 
   if (!open) return null
 
-  const audienceCategories = getAudienceCategories(selectedAudience, customCategories)
-  const categoryBrands = uniqueValues(
-    products
-      .filter((p) => p.audience === selectedAudience || selectedAudience === 'Oferta')
-      .map((p) => p.brand)
-  )
-  const brands = uniqueValues([...BRANDS, ...categoryBrands])
+  const categories = getAudienceCategories(selectedAudience, customCategories).filter((c) => c !== 'Playera')
+  const brands = uniqueValues([
+    ...BRANDS,
+    ...products
+      .filter((p) => (selectedAudience === 'Todo' ? true : p.audience === selectedAudience))
+      .map((p) => p.brand),
+  ])
+
+  const fits = getJeansFits(customFits)
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 50,
-        background: 'rgba(0,0,0,.45)',
-      }}
-    >
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 50 }}>
       <div
         style={{
           width: '86%',
@@ -548,12 +683,7 @@ function MobileMenu({
           <button
             type="button"
             onClick={close}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#fff',
-              cursor: 'pointer',
-            }}
+            style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
           >
             <X size={30} />
           </button>
@@ -564,7 +694,7 @@ function MobileMenu({
             type="button"
             onClick={() => {
               if (step === 'categories') setStep('audiences')
-              if (step === 'subcategories') setStep('categories')
+              if (step === 'fits') setStep('categories')
               if (step === 'brands') setStep('categories')
             }}
             style={{
@@ -583,7 +713,7 @@ function MobileMenu({
 
         <div style={{ marginTop: 22, display: 'grid', gap: 22 }}>
           {step === 'audiences' &&
-            AUDIENCES.map((aud) => (
+            AUDIENCES.filter((x) => x !== 'Todo').map((aud) => (
               <button
                 key={aud}
                 type="button"
@@ -616,8 +746,8 @@ function MobileMenu({
                 type="button"
                 onClick={() => {
                   setStoreAudience(selectedAudience)
-                  setStoreCategory('Todas')
-                  setStoreSubcategory('Todas')
+                  setStoreCategory('Todos')
+                  setStoreFit('Todos')
                   setStoreBrand('Todas')
                   close()
                 }}
@@ -634,18 +764,18 @@ function MobileMenu({
                 Ver todo
               </button>
 
-              {audienceCategories.map((cat) => (
+              {categories.map((cat) => (
                 <button
                   key={cat}
                   type="button"
                   onClick={() => {
                     if (cat === 'Jeans') {
                       setSelectedCategory(cat)
-                      setStep('subcategories')
+                      setStep('fits')
                     } else {
                       setStoreAudience(selectedAudience)
                       setStoreCategory(cat)
-                      setStoreSubcategory('Todas')
+                      setStoreFit('Todos')
                       setStoreBrand('Todas')
                       close()
                     }
@@ -689,17 +819,17 @@ function MobileMenu({
             </>
           )}
 
-          {step === 'subcategories' && (
+          {step === 'fits' && (
             <>
-              <h3 style={{ margin: 0, fontSize: 34 }}>{selectedCategory}</h3>
-              {getCategorySubcategories('Jeans', customSubcategories).map((sub) => (
+              <h3 style={{ margin: 0, fontSize: 34 }}>Fit</h3>
+              {fits.map((fit) => (
                 <button
-                  key={sub}
+                  key={fit}
                   type="button"
                   onClick={() => {
                     setStoreAudience(selectedAudience)
-                    setStoreCategory('Jeans')
-                    setStoreSubcategory(sub)
+                    setStoreCategory(selectedCategory)
+                    setStoreFit(fit)
                     setStoreBrand('Todas')
                     close()
                   }}
@@ -713,7 +843,7 @@ function MobileMenu({
                     padding: 0,
                   }}
                 >
-                  {sub}
+                  {fit}
                 </button>
               ))}
             </>
@@ -728,8 +858,8 @@ function MobileMenu({
                   type="button"
                   onClick={() => {
                     setStoreAudience(selectedAudience)
-                    setStoreCategory('Todas')
-                    setStoreSubcategory('Todas')
+                    setStoreCategory('Todos')
+                    setStoreFit('Todos')
                     setStoreBrand(brand)
                     close()
                   }}
@@ -749,15 +879,402 @@ function MobileMenu({
             </>
           )}
         </div>
-
-        <div style={{ marginTop: 42, color: '#d1d5db', fontSize: 18, lineHeight: 1.5 }}>
-          <strong style={{ color: '#fff' }}>Mejora tu precio</strong>
-          <p style={{ marginTop: 10 }}>
-            Más adelante conectaremos aquí el acceso para clientes con precio especial.
-          </p>
-        </div>
       </div>
     </div>
+  )
+}
+
+function ProductCard({
+  product,
+  selectedConfig,
+  setSelectedConfig,
+  onAddToCart,
+  onOpenGallery,
+}) {
+  const current = selectedConfig[product.id] || {
+    size: '',
+    quantity: 0,
+  }
+
+  const activeSize = current.size
+  const stockForSelected = Number(product.stock?.[activeSize] || 0)
+
+  const setSize = (size) => {
+    const available = Number(product.stock?.[size] || 0)
+    setSelectedConfig((prev) => ({
+      ...prev,
+      [product.id]: {
+        size,
+        quantity: available > 0 ? Math.min(prev[product.id]?.quantity || 1, available) : 0,
+      },
+    }))
+  }
+
+  const setQuantity = (qty) => {
+    const available = Number(product.stock?.[activeSize] || 0)
+    const clean = Math.max(0, Math.min(Number(qty || 0), available))
+    setSelectedConfig((prev) => ({
+      ...prev,
+      [product.id]: {
+        size: activeSize,
+        quantity: clean,
+      },
+    }))
+  }
+
+  return (
+    <div style={{ ...styles.card, overflow: 'hidden' }}>
+      <button
+        type="button"
+        onClick={() => onOpenGallery(product)}
+        style={{
+          width: '100%',
+          border: 'none',
+          background: '#f3f4f6',
+          padding: 0,
+          cursor: 'pointer',
+          aspectRatio: '4 / 4.35',
+        }}
+      >
+        {getCover(product) ? (
+          <img src={getCover(product)} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        ) : (
+          <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}>
+            <ImageIcon size={42} color="#9ca3af" />
+          </div>
+        )}
+      </button>
+
+      <div style={{ padding: 18 }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+          <Badge>{product.audience}</Badge>
+          <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
+          {product.category === 'Jeans' && product.subcategory ? (
+            <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge>
+          ) : null}
+          {product.is_new ? (
+            <Badge bg="#0284c7" color="#fff">Nuevo</Badge>
+          ) : null}
+          {product.sales_count > 0 ? (
+            <Badge bg="#f59e0b" color="#fff">Más vendido</Badge>
+          ) : null}
+        </div>
+
+        <h4 style={{ margin: 0, fontSize: 22 }}>{product.name}</h4>
+        <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category}</p>
+        <p style={{ margin: '10px 0 0', color: '#6b7280', minHeight: 48 }}>
+          {product.description || 'Sin descripción'}
+        </p>
+
+        <div style={{ marginTop: 14 }}>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: 22 }}>{mxn(product.price)}</p>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#6b7280', fontWeight: 700 }}>Tallas</p>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {(product.sizes || []).map((size) => {
+              const qty = Number(product.stock?.[size] || 0)
+              const selected = activeSize === size
+              return (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => qty > 0 && setSize(size)}
+                  style={{
+                    border: selected ? '2px solid #0f172a' : '1px solid #d1d5db',
+                    borderRadius: 14,
+                    background: qty > 0 ? '#fff' : '#f3f4f6',
+                    padding: '8px 10px',
+                    minWidth: 54,
+                    cursor: qty > 0 ? 'pointer' : 'not-allowed',
+                    opacity: qty > 0 ? 1 : 0.6,
+                  }}
+                >
+                  <div style={{ fontWeight: 700 }}>{size}</div>
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>{qty} pz</div>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        {activeSize ? (
+          <div style={{ marginTop: 14 }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                flexWrap: 'wrap',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setQuantity((current.quantity || 0) - 1)}
+                style={styles.buttonSecondary}
+              >
+                <Minus size={16} />
+              </button>
+
+              <input
+                type="number"
+                min="0"
+                max={stockForSelected}
+                value={current.quantity}
+                onChange={(e) => setQuantity(e.target.value)}
+                style={{ ...styles.input, width: 86, textAlign: 'center' }}
+              />
+
+              <button
+                type="button"
+                onClick={() => setQuantity((current.quantity || 0) + 1)}
+                style={styles.buttonSecondary}
+              >
+                <Plus size={16} />
+              </button>
+
+              <span style={{ color: '#6b7280', fontSize: 14 }}>
+                Disponible: {stockForSelected} pz
+              </span>
+            </div>
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          onClick={() => onAddToCart(product)}
+          disabled={!activeSize || Number(current.quantity || 0) <= 0}
+          style={{
+            ...styles.buttonPrimary,
+            width: '100%',
+            marginTop: 16,
+            opacity: !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
+          }}
+        >
+          Agregar producto
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function CartSection({
+  isMobile,
+  cart,
+  setCart,
+  customer,
+  setCustomer,
+  sendOrder,
+}) {
+  const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
+  const tier = currentTier(totalPieces)
+
+  const subtotal = useMemo(() => {
+    return cart.reduce((sum, item) => {
+      const unit = Number(item.product[tier.key] || item.product.price || 0)
+      return sum + unit * Number(item.quantity || 0)
+    }, 0)
+  }, [cart, tier])
+
+  const updateItemQty = (index, nextQty) => {
+    setCart((prev) => {
+      const next = [...prev]
+      const item = next[index]
+      if (!item) return prev
+      const max = Number(item.product.stock?.[item.size] || 0)
+      const clean = Math.max(0, Math.min(Number(nextQty || 0), max))
+      next[index] = { ...item, quantity: clean }
+      return next.filter((x) => Number(x.quantity || 0) > 0)
+    })
+  }
+
+  const removeItem = (index) => {
+    setCart((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  return (
+    <section style={{ paddingBottom: 54 }}>
+      <div style={styles.container}>
+        <div style={{ display: 'grid', gap: 24, gridTemplateColumns: isMobile ? '1fr' : '1.05fr .95fr' }}>
+          <div style={{ ...styles.card, padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 30 }}>Carrito</h3>
+                <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+                  Aquí verás tus productos, piezas y total a pagar.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <Badge bg="#eef2ff" color="#3730a3">{tier.label}</Badge>
+                <Badge>{totalPieces} pz</Badge>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: 14, marginTop: 18 }}>
+              {cart.length === 0 ? (
+                <div
+                  style={{
+                    border: '1px dashed #d1d5db',
+                    borderRadius: 20,
+                    padding: 26,
+                    textAlign: 'center',
+                    color: '#6b7280',
+                  }}
+                >
+                  Tu carrito está vacío.
+                </div>
+              ) : (
+                cart.map((item, index) => {
+                  const unit = Number(item.product[tier.key] || item.product.price || 0)
+                  const lineTotal = unit * Number(item.quantity || 0)
+                  const stock = Number(item.product.stock?.[item.size] || 0)
+
+                  return (
+                    <div key={`${item.product.id}-${item.size}-${index}`} style={{ border: '1px solid #e5e7eb', borderRadius: 20, padding: 16 }}>
+                      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '84px 1fr auto', alignItems: 'start' }}>
+                        <div style={{ borderRadius: 16, overflow: 'hidden', background: '#f3f4f6' }}>
+                          {getCover(item.product) ? (
+                            <img src={getCover(item.product)} alt={item.product.name} style={{ width: '100%', height: 84, objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ width: '100%', height: 84, display: 'grid', placeItems: 'center' }}>
+                              <ImageIcon size={28} color="#9ca3af" />
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <h4 style={{ margin: 0, fontSize: 20 }}>{item.product.name}</h4>
+                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+                            {item.product.brand} · {item.product.category}
+                          </p>
+                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+                            Talla: {item.size}
+                          </p>
+                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+                            Precio unitario actual: {mxn(unit)}
+                          </p>
+                        </div>
+
+                        <div style={{ display: 'grid', gap: 10 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <button type="button" style={styles.buttonSecondary} onClick={() => updateItemQty(index, item.quantity - 1)}>
+                              <Minus size={16} />
+                            </button>
+
+                            <input
+                              type="number"
+                              min="0"
+                              max={stock}
+                              value={item.quantity}
+                              onChange={(e) => updateItemQty(index, e.target.value)}
+                              style={{ ...styles.input, width: 74, textAlign: 'center' }}
+                            />
+
+                            <button type="button" style={styles.buttonSecondary} onClick={() => updateItemQty(index, item.quantity + 1)}>
+                              <Plus size={16} />
+                            </button>
+                          </div>
+
+                          <div style={{ fontWeight: 800, textAlign: isMobile ? 'left' : 'right' }}>{mxn(lineTotal)}</div>
+
+                          <button type="button" style={styles.buttonSecondary} onClick={() => removeItem(index)}>
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+
+            <div
+              style={{
+                display: 'grid',
+                gap: 14,
+                gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+                marginTop: 18,
+              }}
+            >
+              <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
+                <p style={{ margin: 0, fontSize: 14, color: '#6b7280' }}>Piezas totales</p>
+                <p style={{ margin: '6px 0 0', fontSize: 28, fontWeight: 800 }}>{totalPieces}</p>
+              </div>
+
+              <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
+                <p style={{ margin: 0, fontSize: 14, color: '#6b7280' }}>Precio aplicado</p>
+                <p style={{ margin: '6px 0 0', fontSize: 20, fontWeight: 800 }}>{tier.label}</p>
+              </div>
+
+              <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
+                <p style={{ margin: 0, fontSize: 14, color: '#6b7280' }}>Total a pagar</p>
+                <p style={{ margin: '6px 0 0', fontSize: 28, fontWeight: 800 }}>{mxn(subtotal)}</p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ ...styles.card, padding: 24 }}>
+            <h3 style={{ margin: 0, fontSize: 30 }}>Datos del cliente</h3>
+            <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+              Completa tus datos y envía el pedido por WhatsApp.
+            </p>
+
+            <div style={{ display: 'grid', gap: 14, marginTop: 18 }}>
+              <input
+                style={styles.input}
+                placeholder="Nombre del cliente"
+                value={customer.name}
+                onChange={(e) => setCustomer((p) => ({ ...p, name: e.target.value }))}
+              />
+
+              <input
+                style={styles.input}
+                placeholder="Teléfono"
+                value={customer.phone}
+                onChange={(e) => setCustomer((p) => ({ ...p, phone: e.target.value }))}
+              />
+
+              <input
+                style={styles.input}
+                placeholder="Ciudad o estado"
+                value={customer.city}
+                onChange={(e) => setCustomer((p) => ({ ...p, city: e.target.value }))}
+              />
+
+              <select
+                style={styles.input}
+                value={customer.delivery}
+                onChange={(e) => setCustomer((p) => ({ ...p, delivery: e.target.value }))}
+              >
+                <option value="Entrega en sucursal">Entrega en sucursal</option>
+                <option value="Envíos">Envíos</option>
+                <option value="Entrega en punto medio">Entrega en punto medio</option>
+              </select>
+
+              <textarea
+                style={styles.textarea}
+                placeholder="Notas o comentarios"
+                value={customer.notes}
+                onChange={(e) => setCustomer((p) => ({ ...p, notes: e.target.value }))}
+              />
+            </div>
+
+            <button
+              type="button"
+              style={{ ...styles.buttonPrimary, width: '100%', marginTop: 18 }}
+              onClick={sendOrder}
+              disabled={cart.length === 0}
+            >
+              <ShoppingBag size={18} />
+              Solicitar pedido
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -767,27 +1284,20 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
   const customCategories = uniqueValues(
     products
       .map((p) => p.category)
-      .filter((c) => !getAllVisibleCategories([]).includes(c))
+      .filter((c) => !uniqueValues(Object.values(BASE_CATEGORY_MAP).flat()).includes(c))
   )
 
-  const customSubcategories = uniqueValues(
+  const customFits = uniqueValues(
     products
       .map((p) => p.subcategory)
-      .filter((s) => s && !JEANS_SUBCATEGORIES.includes(s))
+      .filter((s) => s && !JEANS_FITS.includes(s))
   )
 
-  const customBrands = uniqueValues(
-    products.map((p) => p.brand).filter((b) => b && !BRANDS.includes(b))
-  )
+  const customBrands = uniqueValues(products.map((p) => p.brand).filter((b) => b && !BRANDS.includes(b)))
 
-  const categories = getAudienceCategories(draft.audience, customCategories)
+  const categories = getAudienceCategories(draft.audience, customCategories).filter((c) => c !== 'Playera')
+  const fits = getJeansFits(customFits)
   const brands = uniqueValues([...BRANDS, ...customBrands])
-  const subcategories =
-    draft.category === 'Jeans'
-      ? getCategorySubcategories('Jeans', customSubcategories)
-      : draft.customSubcategory
-        ? [draft.customSubcategory]
-        : []
 
   const addFiles = (files) => {
     const list = Array.from(files || []).filter((file) => file.type.startsWith('image/'))
@@ -818,19 +1328,10 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
   }
 
   const updateSizesFromText = (text) => {
-    const sizes = text
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-
+    const sizes = text.split(',').map((s) => s.trim()).filter(Boolean)
     const nextSizes = sizes.length ? sizes : ['CH', 'M', 'G']
     const nextStock = Object.fromEntries(nextSizes.map((s) => [s, Number(draft.stock?.[s] || 0)]))
-
-    setDraft((prev) => ({
-      ...prev,
-      sizes: nextSizes,
-      stock: nextStock,
-    }))
+    setDraft((prev) => ({ ...prev, sizes: nextSizes, stock: nextStock }))
   }
 
   const addSize = () => {
@@ -848,11 +1349,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
     if (draft.sizes.length <= 1) return
     const nextSizes = draft.sizes.filter((s) => s !== sizeToRemove)
     const nextStock = Object.fromEntries(nextSizes.map((s) => [s, Number(draft.stock?.[s] || 0)]))
-    setDraft((prev) => ({
-      ...prev,
-      sizes: nextSizes,
-      stock: nextStock,
-    }))
+    setDraft((prev) => ({ ...prev, sizes: nextSizes, stock: nextStock }))
   }
 
   return (
@@ -869,24 +1366,24 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
           style={styles.input}
           value={draft.audience}
           onChange={(e) => {
-            const nextAudience = e.target.value
-            const nextCategory = getAudienceCategories(nextAudience, customCategories)[0] || 'Jeans'
-            const nextPrice = DEFAULT_PRICE_BY_CATEGORY[nextCategory] || 0
-            const nextSpecial = DEFAULT_SPECIAL_PRICE_BY_CATEGORY[nextCategory] || 0
+            const audience = e.target.value
+            const nextCategory = getAudienceCategories(audience, customCategories)[0] || 'Jeans'
+            const base = DEFAULT_PRICE_BY_CATEGORY[nextCategory] || 0
+            const special = DEFAULT_SPECIAL_PRICE_BY_CATEGORY[nextCategory] || 0
 
             setDraft((p) => ({
               ...p,
-              audience: nextAudience,
+              audience,
               category: nextCategory,
               subcategory: nextCategory === 'Jeans' ? 'Straight' : '',
-              price: nextPrice,
-              price_tier3: nextPrice,
-              price_tier10: nextPrice,
-              special_price: nextSpecial,
+              price: base,
+              price_tier3: base,
+              price_tier10: base,
+              special_price: special,
             }))
           }}
         >
-          {AUDIENCES.map((aud) => (
+          {AUDIENCES.filter((x) => x !== 'Todo').map((aud) => (
             <option key={aud} value={aud}>
               {aud}
             </option>
@@ -899,18 +1396,17 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
           style={styles.input}
           value={draft.category}
           onChange={(e) => {
-            const nextCategory = e.target.value
-            const nextPrice = DEFAULT_PRICE_BY_CATEGORY[nextCategory] || 0
-            const nextSpecial = DEFAULT_SPECIAL_PRICE_BY_CATEGORY[nextCategory] || 0
-
+            const category = e.target.value
+            const base = DEFAULT_PRICE_BY_CATEGORY[category] || 0
+            const special = DEFAULT_SPECIAL_PRICE_BY_CATEGORY[category] || 0
             setDraft((p) => ({
               ...p,
-              category: nextCategory,
-              subcategory: nextCategory === 'Jeans' ? 'Straight' : '',
-              price: p.price || nextPrice,
-              price_tier3: p.price_tier3 || nextPrice,
-              price_tier10: p.price_tier10 || nextPrice,
-              special_price: p.special_price || nextSpecial,
+              category,
+              subcategory: category === 'Jeans' ? 'Straight' : '',
+              price: base,
+              price_tier3: base,
+              price_tier10: base,
+              special_price: special,
             }))
           }}
         >
@@ -936,16 +1432,16 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
             value={draft.subcategory}
             onChange={(e) => setDraft((p) => ({ ...p, subcategory: e.target.value }))}
           >
-            {subcategories.map((sub) => (
-              <option key={sub} value={sub}>
-                {sub}
+            {fits.map((fit) => (
+              <option key={fit} value={fit}>
+                {fit}
               </option>
             ))}
           </select>
 
           <input
             style={styles.input}
-            placeholder="O crea una subcategoría personalizada"
+            placeholder="O crea un fit personalizado"
             value={draft.customSubcategory || ''}
             onChange={(e) => setDraft((p) => ({ ...p, customSubcategory: e.target.value }))}
           />
@@ -1194,68 +1690,67 @@ function StoreView({
   setStoreAudience,
   storeCategory,
   setStoreCategory,
-  storeSubcategory,
-  setStoreSubcategory,
   storeBrand,
   setStoreBrand,
-  priceSort,
-  setPriceSort,
+  storeFit,
+  setStoreFit,
   customCategories,
-  customSubcategories,
+  customFits,
+  selectedConfig,
+  setSelectedConfig,
+  addToCart,
+  cart,
+  setCart,
+  customer,
+  setCustomer,
+  sendOrder,
+  gallery,
+  setGallery,
 }) {
   const [openMegaMenu, setOpenMegaMenu] = useState(false)
   const [megaAudience, setMegaAudience] = useState('Hombre')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const visibleBrands = uniqueValues([...BRANDS, ...products.map((p) => p.brand)])
-  const visibleCategories = getAudienceCategories(storeAudience, customCategories)
-  const visibleSubcategories =
-    storeCategory === 'Jeans'
-      ? getCategorySubcategories('Jeans', customSubcategories)
-      : []
+  const visibleCategories = getAudienceCategories(storeAudience, customCategories).filter((c) => c !== 'Playera')
 
   const filteredProducts = useMemo(() => {
     let list = [...products].filter((p) => p.active)
 
-    if (storeAudience !== 'Todas') {
+    if (storeAudience !== 'Todo') {
       list = list.filter((p) => p.audience === storeAudience)
     }
 
-    if (storeCategory !== 'Todas') {
+    if (storeCategory !== 'Todos') {
       list = list.filter((p) => p.category === storeCategory)
-    }
-
-    if (storeSubcategory !== 'Todas') {
-      list = list.filter((p) => p.subcategory === storeSubcategory)
     }
 
     if (storeBrand !== 'Todas') {
       list = list.filter((p) => p.brand === storeBrand)
     }
 
+    if (storeFit !== 'Todos') {
+      list = list.filter((p) => p.subcategory === storeFit)
+    }
+
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter((p) =>
-        `${p.name} ${p.category} ${p.subcategory} ${p.brand} ${p.audience}`
-          .toLowerCase()
-          .includes(q)
+        `${p.name} ${p.category} ${p.subcategory} ${p.brand} ${p.audience}`.toLowerCase().includes(q)
       )
     }
 
-    if (priceSort === 'low-high') {
-      list.sort((a, b) => Number(a.price || 0) - Number(b.price || 0))
-    } else if (priceSort === 'high-low') {
-      list.sort((a, b) => Number(b.price || 0) - Number(a.price || 0))
-    } else {
-      list.sort((a, b) => {
-        const aDate = new Date(a.created_at || 0).getTime()
-        const bDate = new Date(b.created_at || 0).getTime()
-        return bDate - aDate
-      })
-    }
+    list.sort((a, b) => {
+      const aPriority = (a.is_new ? 1000000 : 0) + Number(a.sales_count || 0) * 1000 + new Date(a.created_at || 0).getTime()
+      const bPriority = (b.is_new ? 1000000 : 0) + Number(b.sales_count || 0) * 1000 + new Date(b.created_at || 0).getTime()
+      return bPriority - aPriority
+    })
 
     return list
-  }, [products, storeAudience, storeCategory, storeSubcategory, storeBrand, priceSort, search])
+  }, [products, storeAudience, storeCategory, storeBrand, storeFit, search])
+
+  const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
+  const tier = currentTier(totalPieces)
 
   return (
     <>
@@ -1289,7 +1784,7 @@ function StoreView({
 
             {!isMobile ? (
               <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-                {AUDIENCES.map((aud) => (
+                {AUDIENCES.filter((x) => x !== 'Todo').map((aud) => (
                   <button
                     key={aud}
                     type="button"
@@ -1299,8 +1794,8 @@ function StoreView({
                     }}
                     onClick={() => {
                       setStoreAudience(aud)
-                      setStoreCategory('Todas')
-                      setStoreSubcategory('Todas')
+                      setStoreCategory('Todos')
+                      setStoreFit('Todos')
                       setStoreBrand('Todas')
                     }}
                     style={{
@@ -1349,12 +1844,7 @@ function StoreView({
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(true)}
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#fff',
-                    cursor: 'pointer',
-                  }}
+                  style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
                 >
                   <Menu size={32} />
                 </button>
@@ -1365,15 +1855,14 @@ function StoreView({
           {!isMobile && openMegaMenu ? (
             <DesktopMegaMenu
               activeAudience={megaAudience}
-              setActiveAudience={setMegaAudience}
+              closeMenu={() => setOpenMegaMenu(false)}
               products={products}
               setStoreAudience={setStoreAudience}
               setStoreCategory={setStoreCategory}
-              setStoreSubcategory={setStoreSubcategory}
               setStoreBrand={setStoreBrand}
-              closeMenu={() => setOpenMegaMenu(false)}
+              setStoreFit={setStoreFit}
               customCategories={customCategories}
-              customSubcategories={customSubcategories}
+              customFits={customFits}
             />
           ) : null}
         </div>
@@ -1385,10 +1874,10 @@ function StoreView({
         products={products}
         setStoreAudience={setStoreAudience}
         setStoreCategory={setStoreCategory}
-        setStoreSubcategory={setStoreSubcategory}
         setStoreBrand={setStoreBrand}
+        setStoreFit={setStoreFit}
         customCategories={customCategories}
-        customSubcategories={customSubcategories}
+        customFits={customFits}
       />
 
       <section style={{ padding: '28px 0 14px' }}>
@@ -1405,27 +1894,21 @@ function StoreView({
               <h1
                 style={{
                   margin: 0,
-                  fontSize: isMobile ? 54 : 82,
-                  lineHeight: 0.96,
+                  fontSize: isMobile ? 34 : 52,
+                  lineHeight: 1.02,
                   fontWeight: 800,
+                  maxWidth: 660,
                 }}
               >
                 Aparta mercancía y desbloquea mejor precio por volumen.
               </h1>
             </div>
 
-            <div
-              style={{
-                ...styles.card,
-                padding: 22,
-                display: 'grid',
-                gap: 12,
-              }}
-            >
+            <div style={{ ...styles.card, padding: 22, display: 'grid', gap: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                 <div>
                   <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Nivel actual</p>
-                  <h2 style={{ margin: '5px 0 0', fontSize: isMobile ? 28 : 34 }}>Precio normal</h2>
+                  <h2 style={{ margin: '5px 0 0', fontSize: isMobile ? 28 : 34 }}>{tier.label}</h2>
                 </div>
                 <div
                   style={{
@@ -1437,27 +1920,32 @@ function StoreView({
                   }}
                 >
                   <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>Piezas</p>
-                  <p style={{ margin: '4px 0 0', fontWeight: 800, fontSize: 24 }}>0</p>
+                  <p style={{ margin: '4px 0 0', fontWeight: 800, fontSize: 24 }}>{totalPieces}</p>
                 </div>
               </div>
 
-              <div
-                style={{
-                  display: 'grid',
-                  gap: 12,
-                  gridTemplateColumns: '1fr 1fr',
-                }}
-              >
+              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
                 <div style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16 }}>
                   <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Subtotal estimado</p>
-                  <p style={{ margin: '6px 0 0', fontWeight: 800, fontSize: 22 }}>$0</p>
+                  <p style={{ margin: '6px 0 0', fontWeight: 800, fontSize: 22 }}>
+                    {mxn(
+                      cart.reduce((sum, item) => {
+                        const unit = Number(item.product[tier.key] || item.product.price || 0)
+                        return sum + unit * Number(item.quantity || 0)
+                      }, 0)
+                    )}
+                  </p>
                 </div>
 
                 <div style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16 }}>
                   <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Venta</p>
                   <p style={{ margin: '6px 0 0', fontWeight: 700 }}>Piezas mixtas</p>
                   <p style={{ margin: '8px 0 0', color: '#d97706', fontSize: 14 }}>
-                    Te faltan 3 pieza(s) para desbloquear el precio de 3+ piezas.
+                    {totalPieces >= 10
+                      ? 'Ya tienes el mejor precio disponible.'
+                      : totalPieces >= 3
+                        ? `Te faltan ${10 - totalPieces} pieza(s) para desbloquear el precio de 10+ piezas.`
+                        : `Te faltan ${3 - totalPieces} pieza(s) para desbloquear el precio de 3+ piezas.`}
                   </p>
                 </div>
               </div>
@@ -1472,23 +1960,16 @@ function StoreView({
         </div>
       </section>
 
-      <section style={{ paddingBottom: 26 }}>
+      <section style={{ paddingBottom: 24 }}>
         <div style={styles.container}>
           <div
             style={{
               display: 'grid',
               gap: 14,
-              gridTemplateColumns: isMobile ? '1fr' : '1.2fr .8fr .8fr .8fr .8fr .8fr',
+              gridTemplateColumns: isMobile ? '1fr' : '1.25fr .8fr .9fr .9fr',
               alignItems: 'center',
             }}
           >
-            <div>
-              <h3 style={{ margin: '0 0 6px', fontSize: 26 }}>Catálogo</h3>
-              <p style={{ margin: 0, color: '#6b7280' }}>
-                Filtra por segmento, categoría, subcategoría, marca o precio.
-              </p>
-            </div>
-
             {isMobile ? (
               <div style={{ position: 'relative' }}>
                 <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
@@ -1499,18 +1980,20 @@ function StoreView({
                   placeholder="Buscar producto"
                 />
               </div>
-            ) : null}
+            ) : (
+              <div />
+            )}
 
             <select
               style={styles.input}
               value={storeAudience}
               onChange={(e) => {
                 setStoreAudience(e.target.value)
-                setStoreCategory('Todas')
-                setStoreSubcategory('Todas')
+                setStoreCategory('Todos')
+                setStoreBrand('Todas')
+                setStoreFit('Todos')
               }}
             >
-              <option value="Todas">Todos</option>
               {AUDIENCES.map((aud) => (
                 <option key={aud} value={aud}>
                   {aud}
@@ -1523,27 +2006,13 @@ function StoreView({
               value={storeCategory}
               onChange={(e) => {
                 setStoreCategory(e.target.value)
-                setStoreSubcategory('Todas')
+                setStoreFit('Todos')
               }}
             >
-              <option value="Todas">Todas las categorías</option>
+              <option value="Todos">Todos los productos</option>
               {visibleCategories.map((cat) => (
                 <option key={cat} value={cat}>
                   {cat}
-                </option>
-              ))}
-            </select>
-
-            <select
-              style={styles.input}
-              value={storeSubcategory}
-              onChange={(e) => setStoreSubcategory(e.target.value)}
-              disabled={storeCategory !== 'Jeans'}
-            >
-              <option value="Todas">Todas las subcategorías</option>
-              {visibleSubcategories.map((sub) => (
-                <option key={sub} value={sub}>
-                  {sub}
                 </option>
               ))}
             </select>
@@ -1560,31 +2029,14 @@ function StoreView({
                 </option>
               ))}
             </select>
-
-            <select
-              style={styles.input}
-              value={priceSort}
-              onChange={(e) => setPriceSort(e.target.value)}
-            >
-              <option value="recent">Lo más reciente</option>
-              <option value="low-high">Precio menor a mayor</option>
-              <option value="high-low">Precio mayor a menor</option>
-            </select>
           </div>
         </div>
       </section>
 
-      <section style={{ paddingBottom: 50 }}>
+      <section style={{ paddingBottom: 42 }}>
         <div style={styles.container}>
           {filteredProducts.length === 0 ? (
-            <div
-              style={{
-                ...styles.card,
-                padding: 30,
-                textAlign: 'center',
-                color: '#6b7280',
-              }}
-            >
+            <div style={{ ...styles.card, padding: 30, textAlign: 'center', color: '#6b7280' }}>
               No encontramos productos con ese filtro.
             </div>
           ) : (
@@ -1596,116 +2048,52 @@ function StoreView({
               }}
             >
               {filteredProducts.map((product) => (
-                <div key={product.id} style={{ ...styles.card, overflow: 'hidden' }}>
-                  <div style={{ aspectRatio: '4 / 4.4', background: '#f3f4f6' }}>
-                    {getCover(product) ? (
-                      <img
-                        src={getCover(product)}
-                        alt={product.name}
-                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      />
-                    ) : (
-                      <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}>
-                        <ImageIcon size={44} color="#9ca3af" />
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ padding: 18 }}>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-                      <span
-                        style={{
-                          fontSize: 12,
-                          borderRadius: 999,
-                          padding: '5px 10px',
-                          background: '#f3f4f6',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {product.audience}
-                      </span>
-
-                      <span
-                        style={{
-                          fontSize: 12,
-                          borderRadius: 999,
-                          padding: '5px 10px',
-                          background: '#fff',
-                          border: '1px solid #d1d5db',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {product.brand}
-                      </span>
-
-                      {product.category === 'Jeans' && product.subcategory ? (
-                        <span
-                          style={{
-                            fontSize: 12,
-                            borderRadius: 999,
-                            padding: '5px 10px',
-                            background: '#e0f2fe',
-                            color: '#0c4a6e',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {product.subcategory}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <h4 style={{ margin: 0, fontSize: 24 }}>{product.name}</h4>
-                    <p style={{ margin: '8px 0 0', color: '#6b7280' }}>
-                      {product.category}
-                    </p>
-                    <p style={{ margin: '10px 0 0', color: '#6b7280', minHeight: 48 }}>
-                      {product.description || 'Sin descripción'}
-                    </p>
-
-                    <div style={{ marginTop: 14 }}>
-                      <p style={{ margin: 0, fontWeight: 800, fontSize: 24 }}>{mxn(product.price)}</p>
-                    </div>
-
-                    <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      {(product.sizes || []).map((size) => (
-                        <span
-                          key={size}
-                          style={{
-                            border: '1px solid #d1d5db',
-                            borderRadius: 12,
-                            padding: '6px 10px',
-                            fontSize: 13,
-                            color: Number(product.stock?.[size] || 0) > 0 ? '#111827' : '#9ca3af',
-                          }}
-                        >
-                          {size}
-                        </span>
-                      ))}
-                    </div>
-
-                    <button
-                      type="button"
-                      style={{ ...styles.buttonPrimary, width: '100%', marginTop: 16 }}
-                    >
-                      Ver producto
-                    </button>
-                  </div>
-                </div>
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  selectedConfig={selectedConfig}
+                  setSelectedConfig={setSelectedConfig}
+                  onAddToCart={addToCart}
+                  onOpenGallery={(prod) =>
+                    setGallery({
+                      open: true,
+                      product: prod,
+                      imageIndex: 0,
+                    })
+                  }
+                />
               ))}
             </div>
           )}
         </div>
       </section>
+
+      <CartSection
+        isMobile={isMobile}
+        cart={cart}
+        setCart={setCart}
+        customer={customer}
+        setCustomer={setCustomer}
+        sendOrder={sendOrder}
+      />
+
+      <ProductLightbox
+        open={gallery.open}
+        product={gallery.product}
+        imageIndex={gallery.imageIndex}
+        setImageIndex={(value) =>
+          setGallery((prev) => ({
+            ...prev,
+            imageIndex: typeof value === 'function' ? value(prev.imageIndex) : value,
+          }))
+        }
+        onClose={() => setGallery({ open: false, product: null, imageIndex: 0 })}
+      />
     </>
   )
 }
 
-function AdminView({
-  products,
-  fetchProducts,
-  loading,
-  setLoading,
-}) {
+function AdminView({ products, fetchProducts, loading, setLoading }) {
   const isMobile = useIsMobile()
   const [adminSearch, setAdminSearch] = useState('')
   const [editingId, setEditingId] = useState(null)
@@ -1716,9 +2104,7 @@ function AdminView({
     if (!adminSearch.trim()) return products
     const q = adminSearch.toLowerCase()
     return products.filter((p) =>
-      `${p.name} ${p.category} ${p.subcategory} ${p.brand} ${p.audience}`
-        .toLowerCase()
-        .includes(q)
+      `${p.name} ${p.category} ${p.subcategory} ${p.brand} ${p.audience}`.toLowerCase().includes(q)
     )
   }, [products, adminSearch])
 
@@ -1732,24 +2118,13 @@ function AdminView({
 
   const prepareDraftForSave = (draft) => {
     const finalCategory = draft.customCategory?.trim() || draft.category
-    const finalSubcategory =
-      finalCategory === 'Jeans'
-        ? draft.customSubcategory?.trim() || draft.subcategory
-        : ''
+    const finalSubcategory = finalCategory === 'Jeans' ? draft.customSubcategory?.trim() || draft.subcategory : ''
     const finalBrand = draft.customBrand?.trim() || draft.brand
-
-    const fallbackPrice = DEFAULT_PRICE_BY_CATEGORY[finalCategory] || 0
-    const fallbackSpecial = DEFAULT_SPECIAL_PRICE_BY_CATEGORY[finalCategory] || 0
-
     return {
       ...draft,
       category: finalCategory,
       subcategory: finalSubcategory,
       brand: finalBrand,
-      price: Number(draft.price || fallbackPrice),
-      price_tier3: Number(draft.price_tier3 || draft.price || fallbackPrice),
-      price_tier10: Number(draft.price_tier10 || draft.price || fallbackPrice),
-      special_price: Number(draft.special_price || fallbackSpecial),
     }
   }
 
@@ -1762,7 +2137,6 @@ function AdminView({
     setLoading(true)
     const clean = prepareDraftForSave(newProductDraft)
     const payload = productToDb(clean)
-
     const { error } = await supabase.from('products').insert([payload])
     setLoading(false)
 
@@ -1786,8 +2160,7 @@ function AdminView({
   }
 
   const saveEdit = async () => {
-    if (!editingDraft) return
-    if (!editingDraft.name.trim()) {
+    if (!editingDraft?.name?.trim()) {
       alert('Pon nombre al producto')
       return
     }
@@ -1795,12 +2168,7 @@ function AdminView({
     setLoading(true)
     const clean = prepareDraftForSave(editingDraft)
     const payload = productToDb(clean)
-
-    const { error } = await supabase
-      .from('products')
-      .update(payload)
-      .eq('id', editingId)
-
+    const { error } = await supabase.from('products').update(payload).eq('id', editingId)
     setLoading(false)
 
     if (error) {
@@ -1825,13 +2193,11 @@ function AdminView({
   const deleteProduct = async (id) => {
     const ok = window.confirm('¿Seguro que deseas eliminar este producto?')
     if (!ok) return
-
     const { error } = await supabase.from('products').delete().eq('id', id)
     if (error) {
       alert(`No se pudo eliminar: ${error.message}`)
       return
     }
-
     await fetchProducts()
   }
 
@@ -1844,35 +2210,24 @@ function AdminView({
               <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
                 <Settings />
                 <div>
-                  <h2 style={{ margin: 0, fontSize: 32 }}>Panel admin pro</h2>
+                  <h2 style={{ margin: 0, fontSize: 32 }}>Panel admin</h2>
                   <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
-                    Administra catálogo, segmentos, categorías, marcas y precios.
+                    Administra catálogo, marcas, fit, precios, tallas y stock.
                   </p>
                 </div>
               </div>
 
               <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(3, 1fr)' }}>
                 <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6b7280' }}>
-                    <Tag size={16} />
-                    <span>Productos</span>
-                  </div>
+                  <p style={{ margin: 0, color: '#6b7280' }}>Productos</p>
                   <p style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 26 }}>{stats.total}</p>
                 </div>
-
                 <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6b7280' }}>
-                    <Boxes size={16} />
-                    <span>Activos</span>
-                  </div>
+                  <p style={{ margin: 0, color: '#6b7280' }}>Activos</p>
                   <p style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 26 }}>{stats.active}</p>
                 </div>
-
                 <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6b7280' }}>
-                    <Boxes size={16} />
-                    <span>Stock</span>
-                  </div>
+                  <p style={{ margin: 0, color: '#6b7280' }}>Stock</p>
                   <p style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 26 }}>{stats.stock}</p>
                 </div>
               </div>
@@ -1905,9 +2260,6 @@ function AdminView({
             >
               <div>
                 <h3 style={{ margin: 0, fontSize: 26 }}>Productos registrados</h3>
-                <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
-                  Busca y edita productos según segmento, categoría o marca.
-                </p>
               </div>
 
               <div style={{ position: 'relative', width: isMobile ? '100%' : 280 }}>
@@ -1968,51 +2320,14 @@ function AdminView({
                       <div>
                         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                           <h4 style={{ margin: 0, fontSize: 22 }}>{product.name}</h4>
-
-                          <span
-                            style={{
-                              borderRadius: 999,
-                              padding: '5px 10px',
-                              background: '#f3f4f6',
-                              fontWeight: 700,
-                              fontSize: 12,
-                            }}
-                          >
-                            {product.audience}
-                          </span>
-
-                          <span
-                            style={{
-                              borderRadius: 999,
-                              padding: '5px 10px',
-                              background: '#fff',
-                              border: '1px solid #d1d5db',
-                              fontWeight: 700,
-                              fontSize: 12,
-                            }}
-                          >
-                            {product.brand}
-                          </span>
-
+                          <Badge>{product.audience}</Badge>
+                          <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
                           {product.category === 'Jeans' && product.subcategory ? (
-                            <span
-                              style={{
-                                borderRadius: 999,
-                                padding: '5px 10px',
-                                background: '#dbeafe',
-                                color: '#1d4ed8',
-                                fontWeight: 700,
-                                fontSize: 12,
-                              }}
-                            >
-                              {product.subcategory}
-                            </span>
+                            <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge>
                           ) : null}
                         </div>
 
-                        <p style={{ margin: '8px 0 0', color: '#6b7280' }}>
-                          {product.category}
-                        </p>
+                        <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category}</p>
 
                         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 12 }}>
                           <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
@@ -2032,22 +2347,6 @@ function AdminView({
                             <div style={{ fontWeight: 800 }}>{mxn(product.special_price)}</div>
                           </div>
                         </div>
-
-                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
-                          {(product.sizes || []).map((size) => (
-                            <span
-                              key={size}
-                              style={{
-                                border: '1px solid #d1d5db',
-                                borderRadius: 12,
-                                padding: '6px 10px',
-                                fontSize: 13,
-                              }}
-                            >
-                              {size}: {product.stock?.[size] || 0}
-                            </span>
-                          ))}
-                        </div>
                       </div>
 
                       <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: 8 }}>
@@ -2064,11 +2363,7 @@ function AdminView({
                           {product.active ? 'Ocultar' : 'Activar'}
                         </button>
 
-                        <button
-                          type="button"
-                          style={styles.buttonSecondary}
-                          onClick={() => deleteProduct(product.id)}
-                        >
+                        <button type="button" style={styles.buttonSecondary} onClick={() => deleteProduct(product.id)}>
                           <Trash2 size={16} />
                           Eliminar
                         </button>
@@ -2079,15 +2374,7 @@ function AdminView({
               ))}
 
               {filteredProducts.length === 0 ? (
-                <div
-                  style={{
-                    border: '1px dashed #d1d5db',
-                    borderRadius: 18,
-                    padding: 22,
-                    textAlign: 'center',
-                    color: '#6b7280',
-                  }}
-                >
+                <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 22, textAlign: 'center', color: '#6b7280' }}>
                   No hay productos con ese criterio.
                 </div>
               ) : null}
@@ -2109,7 +2396,7 @@ function AdminLogin({ loginForm, setLoginForm, loginError, showPassword, setShow
           <div style={{ ...styles.card, padding: 28 }}>
             <h2 style={{ margin: 0, fontSize: isMobile ? 36 : 48 }}>Panel administrador</h2>
             <p style={{ marginTop: 12, color: '#6b7280', lineHeight: 1.7 }}>
-              Aquí administrarás productos, segmentos, categorías, subcategorías, marcas y precios.
+              Aquí administrarás productos, marcas, fit, tallas, stock y precios.
             </p>
           </div>
 
@@ -2118,9 +2405,7 @@ function AdminLogin({ loginForm, setLoginForm, loginError, showPassword, setShow
               <Lock />
               <div>
                 <h3 style={{ margin: 0, fontSize: 30 }}>Iniciar sesión</h3>
-                <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
-                  Usa tu usuario y contraseña de admin.
-                </p>
+                <p style={{ margin: '4px 0 0', color: '#6b7280' }}>Usa tu usuario y contraseña de admin.</p>
               </div>
             </div>
 
@@ -2160,9 +2445,7 @@ function AdminLogin({ loginForm, setLoginForm, loginError, showPassword, setShow
                 </button>
               </div>
 
-              {loginError ? (
-                <p style={{ margin: 0, color: '#dc2626', fontWeight: 700 }}>{loginError}</p>
-              ) : null}
+              {loginError ? <p style={{ margin: 0, color: '#dc2626', fontWeight: 700 }}>{loginError}</p> : null}
 
               <button type="button" style={styles.buttonPrimary} onClick={handleLogin}>
                 Entrar al panel
@@ -2193,11 +2476,20 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false)
 
   const [search, setSearch] = useState('')
-  const [storeAudience, setStoreAudience] = useState('Hombre')
-  const [storeCategory, setStoreCategory] = useState('Todas')
-  const [storeSubcategory, setStoreSubcategory] = useState('Todas')
+  const [storeAudience, setStoreAudience] = useState('Todo')
+  const [storeCategory, setStoreCategory] = useState('Todos')
   const [storeBrand, setStoreBrand] = useState('Todas')
-  const [priceSort, setPriceSort] = useState('recent')
+  const [storeFit, setStoreFit] = useState('Todos')
+
+  const [selectedConfig, setSelectedConfig] = useState({})
+  const [cart, setCart] = useState([])
+  const [customer, setCustomer] = useState(emptyCustomer)
+
+  const [gallery, setGallery] = useState({
+    open: false,
+    product: null,
+    imageIndex: 0,
+  })
 
   async function fetchProducts() {
     const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false })
@@ -2223,17 +2515,158 @@ export default function App() {
     return uniqueValues(
       products
         .map((p) => p.category)
-        .filter((cat) => !getAllVisibleCategories([]).includes(cat))
+        .filter((cat) => !uniqueValues(Object.values(BASE_CATEGORY_MAP).flat()).includes(cat))
     )
   }, [products])
 
-  const customSubcategories = useMemo(() => {
+  const customFits = useMemo(() => {
     return uniqueValues(
       products
         .map((p) => p.subcategory)
-        .filter((sub) => sub && !JEANS_SUBCATEGORIES.includes(sub))
+        .filter((sub) => sub && !JEANS_FITS.includes(sub))
     )
   }, [products])
+
+  const addToCart = (product) => {
+    const selection = selectedConfig[product.id]
+    if (!selection?.size || Number(selection.quantity || 0) <= 0) return
+
+    const stock = Number(product.stock?.[selection.size] || 0)
+    if (Number(selection.quantity || 0) > stock) {
+      alert('La cantidad supera el stock disponible.')
+      return
+    }
+
+    setCart((prev) => {
+      const index = prev.findIndex(
+        (item) => item.product.id === product.id && item.size === selection.size
+      )
+
+      if (index >= 0) {
+        const next = [...prev]
+        const currentQty = Number(next[index].quantity || 0)
+        const newQty = Math.min(stock, currentQty + Number(selection.quantity || 0))
+        next[index] = { ...next[index], quantity: newQty }
+        return next
+      }
+
+      return [...prev, { product, size: selection.size, quantity: Number(selection.quantity || 0) }]
+    })
+
+    setSelectedConfig((prev) => ({
+      ...prev,
+      [product.id]: {
+        size: selection.size,
+        quantity: 0,
+      },
+    }))
+  }
+
+  const sendOrder = async () => {
+    if (cart.length === 0) {
+      alert('Agrega productos al carrito.')
+      return
+    }
+
+    if (!customer.name.trim() || !customer.phone.trim()) {
+      alert('Pon al menos nombre y teléfono.')
+      return
+    }
+
+    const totalPieces = cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+    const tier = currentTier(totalPieces)
+    const subtotal = cart.reduce((sum, item) => {
+      const unit = Number(item.product[tier.key] || item.product.price || 0)
+      return sum + unit * Number(item.quantity || 0)
+    }, 0)
+
+    try {
+      setLoading(true)
+
+      const orderPayload = {
+        customer_name: customer.name || '',
+        customer_phone: customer.phone || '',
+        customer_city: customer.city || '',
+        delivery: customer.delivery || '',
+        notes: customer.notes || '',
+        items_json: cart.map((item) => ({
+          product_id: item.product.id,
+          name: item.product.name,
+          size: item.size,
+          quantity: item.quantity,
+          unit_price: Number(item.product[tier.key] || item.product.price || 0),
+          total: Number(item.product[tier.key] || item.product.price || 0) * Number(item.quantity || 0),
+        })),
+        total_pieces: totalPieces,
+        subtotal,
+        price_level: tier.label,
+        status: 'nuevo',
+        whatsapp_sent: false,
+      }
+
+      const { error: orderError } = await supabase.from('orders').insert([orderPayload])
+      if (orderError) {
+        alert(`No se pudo guardar el pedido: ${orderError.message}`)
+        setLoading(false)
+        return
+      }
+
+      for (const item of cart) {
+        const product = products.find((p) => p.id === item.product.id)
+        if (!product) continue
+
+        const nextStock = {
+          ...product.stock,
+          [item.size]: Math.max(0, Number(product.stock?.[item.size] || 0) - Number(item.quantity || 0)),
+        }
+
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({
+            stock_json: nextStock,
+            stock: totalStock(nextStock),
+          })
+          .eq('id', item.product.id)
+
+        if (updateError) {
+          alert(`No se pudo actualizar stock de ${product.name}: ${updateError.message}`)
+          setLoading(false)
+          return
+        }
+      }
+
+      const itemsText = cart
+        .map((item, idx) => {
+          const unit = Number(item.product[tier.key] || item.product.price || 0)
+          return `${idx + 1}. ${item.product.name} | Talla: ${item.size} | ${item.quantity} pz | ${mxn(unit)}`
+        })
+        .join('%0A')
+
+      const msg =
+        `Hola, quiero solicitar un pedido.%0A%0A` +
+        `*Cliente:* ${customer.name}%0A` +
+        `*Teléfono:* ${customer.phone}%0A` +
+        `*Ciudad:* ${customer.city || '-'}%0A` +
+        `*Entrega:* ${customer.delivery || '-'}%0A` +
+        `*Notas:* ${customer.notes || '-'}%0A%0A` +
+        `*Productos:*%0A${itemsText}%0A%0A` +
+        `*Piezas totales:* ${totalPieces}%0A` +
+        `*Nivel de precio:* ${tier.label}%0A` +
+        `*Total a pagar:* ${mxn(subtotal)}`
+
+      const link = `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`
+
+      await fetchProducts()
+      setCart([])
+      setCustomer(emptyCustomer)
+      setLoading(false)
+      window.open(link, '_blank')
+    } catch (error) {
+      console.error(error)
+      alert(error.message || 'Error al enviar pedido')
+      setLoading(false)
+    }
+  }
 
   const handleLogin = () => {
     if (loginForm.username === ADMIN_USERNAME && loginForm.password === ADMIN_PASSWORD) {
@@ -2244,7 +2677,6 @@ export default function App() {
       if (typeof window !== 'undefined') window.history.replaceState({}, '', '/admin')
       return
     }
-
     setLoginError('Usuario o contraseña incorrectos.')
   }
 
@@ -2256,7 +2688,7 @@ export default function App() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5', color: '#111827' }}>
+    <div style={styles.app}>
       {route === 'store' ? (
         <StoreView
           isMobile={isMobile}
@@ -2267,14 +2699,22 @@ export default function App() {
           setStoreAudience={setStoreAudience}
           storeCategory={storeCategory}
           setStoreCategory={setStoreCategory}
-          storeSubcategory={storeSubcategory}
-          setStoreSubcategory={setStoreSubcategory}
           storeBrand={storeBrand}
           setStoreBrand={setStoreBrand}
-          priceSort={priceSort}
-          setPriceSort={setPriceSort}
+          storeFit={storeFit}
+          setStoreFit={setStoreFit}
           customCategories={customCategories}
-          customSubcategories={customSubcategories}
+          customFits={customFits}
+          selectedConfig={selectedConfig}
+          setSelectedConfig={setSelectedConfig}
+          addToCart={addToCart}
+          cart={cart}
+          setCart={setCart}
+          customer={customer}
+          setCustomer={setCustomer}
+          sendOrder={sendOrder}
+          gallery={gallery}
+          setGallery={setGallery}
         />
       ) : isAdminAuthenticated ? (
         <>
