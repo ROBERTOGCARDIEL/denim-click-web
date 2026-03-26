@@ -19,7 +19,6 @@ import {
   Settings,
   QrCode,
   ScanLine,
-  BadgePercent,
 } from 'lucide-react'
 import { supabase } from './supabase'
 
@@ -27,11 +26,12 @@ const STORE_NAME = 'Denim Click'
 const STORE_LOGO = '/logo-denim-click.png'
 const ADMIN_USERNAME = 'Denim'
 const ADMIN_PASSWORD = 'Denimzoa2026'
-const ADMIN_SESSION_KEY = 'apartados_admin_session_v1'
-const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v1'
+const ADMIN_SESSION_KEY = 'apartados_admin_session_v2'
+const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v2'
 const WHATSAPP_NUMBER = '525572665573'
 
 const AUDIENCES = ['Todo', 'Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta']
+const CLIENT_TIERS = ['Plata', 'Oro', 'Esmeralda', 'Platino', 'Diamante']
 
 const BASE_CATEGORY_MAP = {
   Hombre: ['Jeans', 'Playeras', 'Sudaderas', 'Chamarras', 'Shorts', 'Polo', 'Camisas', 'Suéter'],
@@ -66,18 +66,6 @@ const DEFAULT_PRICE_BY_CATEGORY = {
   Accesorios: 149,
 }
 
-const DEFAULT_SPECIAL_PRICE_BY_CATEGORY = {
-  Jeans: 349,
-  Playeras: 179,
-  Sudaderas: 319,
-  Chamarras: 449,
-  Shorts: 219,
-  Polo: 219,
-  Camisas: 269,
-  Suéter: 269,
-  Accesorios: 129,
-}
-
 const emptyCustomer = {
   name: '',
   phone: '',
@@ -91,8 +79,7 @@ const emptySpecialClient = {
   phone: '',
   client_code: '',
   qr_value: '',
-  price_mode: 'special_price',
-  discount_percent: 0,
+  client_tier: 'Plata',
   active: true,
   notes: '',
 }
@@ -231,7 +218,7 @@ function buildEmptyProduct() {
     price: DEFAULT_PRICE_BY_CATEGORY.Jeans,
     price_tier3: DEFAULT_PRICE_BY_CATEGORY.Jeans,
     price_tier10: DEFAULT_PRICE_BY_CATEGORY.Jeans,
-    special_price: DEFAULT_SPECIAL_PRICE_BY_CATEGORY.Jeans,
+    special_price: DEFAULT_PRICE_BY_CATEGORY.Jeans,
     active: true,
     is_new: true,
     is_offer: false,
@@ -287,6 +274,7 @@ const styles = {
     padding: '12px 14px',
     outline: 'none',
     background: '#fff',
+    boxSizing: 'border-box',
   },
   textarea: {
     width: '100%',
@@ -298,6 +286,7 @@ const styles = {
     minHeight: 110,
     resize: 'vertical',
     fontFamily: 'inherit',
+    boxSizing: 'border-box',
   },
   buttonPrimary: {
     background: '#0f172a',
@@ -453,13 +442,12 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
   )
 }
 
-function ImprovePriceModal({
+function LoginClientModal({
   open,
   onClose,
   specialCode,
   setSpecialCode,
   loginSpecialClient,
-  scanningMessage,
   specialClientSession,
   logoutSpecialClient,
 }) {
@@ -480,9 +468,9 @@ function ImprovePriceModal({
       <div style={{ ...styles.card, width: '100%', maxWidth: 560, padding: 24 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: 30 }}>Mejora tu precio</h3>
+            <h3 style={{ margin: 0, fontSize: 30 }}>Inicia sesión</h3>
             <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
-              Ingresa tu código o escanéalo para activar precio especial.
+              Entra con tu ID o código de cliente.
             </p>
           </div>
 
@@ -493,55 +481,49 @@ function ImprovePriceModal({
 
         {specialClientSession ? (
           <div style={{ marginTop: 18, border: '1px solid #e5e7eb', borderRadius: 20, padding: 16 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10 }}>
-              <BadgePercent size={18} />
-              <strong>Cliente especial activo</strong>
-            </div>
-
-            <p style={{ margin: '6px 0' }}><strong>Nombre:</strong> {specialClientSession.name}</p>
-            <p style={{ margin: '6px 0' }}><strong>Código:</strong> {specialClientSession.client_code}</p>
-            <p style={{ margin: '6px 0' }}><strong>Modo de precio:</strong> {specialClientSession.price_mode}</p>
+            <p style={{ margin: 0, fontWeight: 800, fontSize: 20 }}>Cliente activo</p>
+            <p style={{ margin: '8px 0 0' }}><strong>Nombre:</strong> {specialClientSession.name}</p>
+            <p style={{ margin: '8px 0 0' }}><strong>Código:</strong> {specialClientSession.client_code}</p>
+            <p style={{ margin: '8px 0 0' }}><strong>Categoría:</strong> {specialClientSession.client_tier}</p>
 
             <div style={{ marginTop: 14 }}>
               <button type="button" style={styles.buttonSecondary} onClick={logoutSpecialClient}>
-                Cerrar sesión especial
+                Cerrar sesión
               </button>
             </div>
           </div>
         ) : (
-          <>
-            <div style={{ marginTop: 18, display: 'grid', gap: 14 }}>
-              <input
-                style={styles.input}
-                placeholder="Escribe tu código"
-                value={specialCode}
-                onChange={(e) => setSpecialCode(e.target.value)}
-              />
+          <div style={{ marginTop: 18, display: 'grid', gap: 14 }}>
+            <input
+              style={styles.input}
+              placeholder="Escribe tu ID o código"
+              value={specialCode}
+              onChange={(e) => setSpecialCode(e.target.value)}
+            />
 
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <button type="button" style={styles.buttonPrimary} onClick={() => loginSpecialClient(specialCode)}>
-                  <Lock size={16} />
-                  Entrar con código
-                </button>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <button type="button" style={styles.buttonPrimary} onClick={() => loginSpecialClient(specialCode)}>
+                <Lock size={16} />
+                Entrar
+              </button>
 
-                <button
-                  type="button"
-                  style={styles.buttonSecondary}
-                  onClick={() => {
-                    const fakeScan = prompt('Pega aquí el valor del QR o código del cliente')
-                    if (fakeScan) loginSpecialClient(fakeScan)
-                  }}
-                >
-                  <ScanLine size={16} />
-                  Escanear código
-                </button>
-              </div>
-
-              <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>
-                {scanningMessage || 'La opción de escaneo rápido ya queda preparada. Por ahora puedes pegar el valor del QR.'}
-              </p>
+              <button
+                type="button"
+                style={styles.buttonSecondary}
+                onClick={() => {
+                  const fakeScan = prompt('Pega aquí el valor del QR o código del cliente')
+                  if (fakeScan) loginSpecialClient(fakeScan)
+                }}
+              >
+                <ScanLine size={16} />
+                Escanear código
+              </button>
             </div>
-          </>
+
+            <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>
+              El escaneo queda preparado. En la siguiente etapa conectamos cámara real para QR.
+            </p>
+          </div>
         )}
       </div>
     </div>
@@ -818,11 +800,15 @@ function MobileMenu({
 
         <div style={{ marginTop: 22, display: 'grid', gap: 22 }}>
           {step === 'audiences' &&
-            AUDIENCES.filter((x) => x !== 'Todo').map((aud) => (
+            ['Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta', 'Mejora tu precio'].map((aud) => (
               <button
                 key={aud}
                 type="button"
                 onClick={() => {
+                  if (aud === 'Mejora tu precio') {
+                    close()
+                    return
+                  }
                   setSelectedAudience(aud)
                   setStep('categories')
                 }}
@@ -839,7 +825,7 @@ function MobileMenu({
                 }}
               >
                 <span>{aud}</span>
-                <ChevronRight />
+                {aud !== 'Mejora tu precio' ? <ChevronRight /> : null}
               </button>
             ))}
 
@@ -996,6 +982,8 @@ function ProductCard({
   onAddToCart,
   onOpenGallery,
   specialClientSession,
+  getDisplayPrice,
+  isMobile,
 }) {
   const current = selectedConfig[product.id] || {
     size: '',
@@ -1005,9 +993,7 @@ function ProductCard({
   const activeSize = current.size
   const stockForSelected = Number(product.stock?.[activeSize] || 0)
 
-  const priceToShow = specialClientSession?.active
-    ? Number(product.special_price || product.price || 0)
-    : Number(product.price || 0)
+  const priceToShow = getDisplayPrice(product)
 
   const setSize = (size) => {
     const available = Number(product.stock?.[size] || 0)
@@ -1033,7 +1019,7 @@ function ProductCard({
   }
 
   return (
-    <div style={{ ...styles.card, overflow: 'hidden' }}>
+    <div style={{ ...styles.card, overflow: 'hidden', borderRadius: 22 }}>
       <button
         type="button"
         onClick={() => onOpenGallery(product)}
@@ -1043,7 +1029,7 @@ function ProductCard({
           background: '#f3f4f6',
           padding: 0,
           cursor: 'pointer',
-          aspectRatio: '4 / 4.35',
+          aspectRatio: isMobile ? '4 / 4.7' : '4 / 4.35',
         }}
       >
         {getCover(product) ? (
@@ -1055,32 +1041,27 @@ function ProductCard({
         )}
       </button>
 
-      <div style={{ padding: 18 }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+      <div style={{ padding: isMobile ? 12 : 18 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
           <Badge>{product.audience}</Badge>
           <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
-          {product.category === 'Jeans' && product.subcategory ? (
-            <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge>
-          ) : null}
-          {product.is_new ? <Badge bg="#0284c7" color="#fff">Nuevo</Badge> : null}
+          {product.is_new ? <Badge bg="#0ea5e9" color="#fff">Nuevo</Badge> : null}
           {product.sales_count > 0 ? <Badge bg="#f59e0b" color="#fff">Más vendido</Badge> : null}
-          {specialClientSession?.active ? <Badge bg="#065f46" color="#fff">Precio especial</Badge> : null}
         </div>
 
-        <h4 style={{ margin: 0, fontSize: 22 }}>{product.name}</h4>
-        <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category}</p>
-        <p style={{ margin: '10px 0 0', color: '#6b7280', minHeight: 48 }}>
+        <h4 style={{ margin: 0, fontSize: isMobile ? 16 : 22, lineHeight: 1.15 }}>{product.name}</h4>
+        <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: isMobile ? 13 : 16 }}>{product.category}</p>
+        <p style={{ margin: '8px 0 0', color: '#6b7280', minHeight: isMobile ? 36 : 48, fontSize: isMobile ? 13 : 16 }}>
           {product.description || 'Sin descripción'}
         </p>
 
-        <div style={{ marginTop: 14 }}>
-          <p style={{ margin: 0, fontWeight: 800, fontSize: 22 }}>{mxn(priceToShow)}</p>
+        <div style={{ marginTop: 10 }}>
+          <p style={{ margin: 0, fontWeight: 800, fontSize: isMobile ? 18 : 22 }}>{mxn(priceToShow)}</p>
         </div>
 
-        <div style={{ marginTop: 14 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#6b7280', fontWeight: 700 }}>Tallas</p>
-
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ marginTop: 10 }}>
+          <p style={{ margin: '0 0 8px', fontSize: 12, color: '#6b7280', fontWeight: 700 }}>Tallas</p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {(product.sizes || []).map((size) => {
               const qty = Number(product.stock?.[size] || 0)
               const selected = activeSize === size
@@ -1091,16 +1072,17 @@ function ProductCard({
                   onClick={() => qty > 0 && setSize(size)}
                   style={{
                     border: selected ? '2px solid #0f172a' : '1px solid #d1d5db',
-                    borderRadius: 14,
+                    borderRadius: 12,
                     background: qty > 0 ? '#fff' : '#f3f4f6',
-                    padding: '8px 10px',
-                    minWidth: 54,
+                    padding: isMobile ? '6px 7px' : '8px 10px',
+                    minWidth: isMobile ? 42 : 54,
                     cursor: qty > 0 ? 'pointer' : 'not-allowed',
                     opacity: qty > 0 ? 1 : 0.6,
+                    fontSize: isMobile ? 11 : 13,
                   }}
                 >
                   <div style={{ fontWeight: 700 }}>{size}</div>
-                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4 }}>{qty} pz</div>
+                  <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{qty} pz</div>
                 </button>
               )
             })}
@@ -1108,10 +1090,10 @@ function ProductCard({
         </div>
 
         {activeSize ? (
-          <div style={{ marginTop: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => setQuantity((current.quantity || 0) - 1)} style={styles.buttonSecondary}>
-                <Minus size={16} />
+          <div style={{ marginTop: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => setQuantity((current.quantity || 0) - 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}>
+                <Minus size={14} />
               </button>
 
               <input
@@ -1120,16 +1102,12 @@ function ProductCard({
                 max={stockForSelected}
                 value={current.quantity}
                 onChange={(e) => setQuantity(e.target.value)}
-                style={{ ...styles.input, width: 86, textAlign: 'center' }}
+                style={{ ...styles.input, width: isMobile ? 58 : 86, textAlign: 'center', padding: isMobile ? '8px 6px' : '12px 14px' }}
               />
 
-              <button type="button" onClick={() => setQuantity((current.quantity || 0) + 1)} style={styles.buttonSecondary}>
-                <Plus size={16} />
+              <button type="button" onClick={() => setQuantity((current.quantity || 0) + 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}>
+                <Plus size={14} />
               </button>
-
-              <span style={{ color: '#6b7280', fontSize: 14 }}>
-                Disponible: {stockForSelected} pz
-              </span>
             </div>
           </div>
         ) : null}
@@ -1141,8 +1119,10 @@ function ProductCard({
           style={{
             ...styles.buttonPrimary,
             width: '100%',
-            marginTop: 16,
+            marginTop: 12,
             opacity: !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
+            padding: isMobile ? '10px 12px' : '12px 18px',
+            fontSize: isMobile ? 13 : 15,
           }}
         >
           Agregar producto
@@ -1160,19 +1140,13 @@ function CartSection({
   setCustomer,
   sendOrder,
   specialClientSession,
+  getCartUnitPrice,
 }) {
   const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
 
-  const tier = currentTier(totalPieces)
-
-  const getUnitPrice = (product) => {
-    if (specialClientSession?.active) return Number(product.special_price || product.price || 0)
-    return Number(product[tier.key] || product.price || 0)
-  }
-
   const subtotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + getUnitPrice(item.product) * Number(item.quantity || 0), 0)
-  }, [cart, tier, specialClientSession])
+    return cart.reduce((sum, item) => sum + getCartUnitPrice(item.product) * Number(item.quantity || 0), 0)
+  }, [cart, specialClientSession, getCartUnitPrice])
 
   const updateItemQty = (index, nextQty) => {
     setCart((prev) => {
@@ -1205,10 +1179,8 @@ function CartSection({
 
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 {specialClientSession?.active ? (
-                  <Badge bg="#065f46" color="#fff">Precio especial cliente</Badge>
-                ) : (
-                  <Badge bg="#eef2ff" color="#3730a3">{tier.label}</Badge>
-                )}
+                  <Badge bg="#065f46" color="#fff">Cliente {specialClientSession.client_tier}</Badge>
+                ) : null}
                 <Badge>{totalPieces} pz</Badge>
               </div>
             </div>
@@ -1228,7 +1200,7 @@ function CartSection({
                 </div>
               ) : (
                 cart.map((item, index) => {
-                  const unit = getUnitPrice(item.product)
+                  const unit = getCartUnitPrice(item.product)
                   const lineTotal = unit * Number(item.quantity || 0)
                   const stock = Number(item.product.stock?.[item.size] || 0)
 
@@ -1247,13 +1219,9 @@ function CartSection({
 
                         <div>
                           <h4 style={{ margin: 0, fontSize: 20 }}>{item.product.name}</h4>
-                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
-                            {item.product.brand} · {item.product.category}
-                          </p>
+                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>{item.product.brand} · {item.product.category}</p>
                           <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Talla: {item.size}</p>
-                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
-                            Precio unitario actual: {mxn(unit)}
-                          </p>
+                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Precio unitario: {mxn(unit)}</p>
                         </div>
 
                         <div style={{ display: 'grid', gap: 10 }}>
@@ -1298,7 +1266,7 @@ function CartSection({
               <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
                 <p style={{ margin: 0, fontSize: 14, color: '#6b7280' }}>Precio aplicado</p>
                 <p style={{ margin: '6px 0 0', fontSize: 20, fontWeight: 800 }}>
-                  {specialClientSession?.active ? 'Precio especial cliente' : tier.label}
+                  {specialClientSession?.active ? `Cliente ${specialClientSession.client_tier}` : 'Público / volumen'}
                 </p>
               </div>
 
@@ -1454,7 +1422,6 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
             const audience = e.target.value
             const nextCategory = getAudienceCategories(audience, customCategories)[0] || 'Jeans'
             const base = DEFAULT_PRICE_BY_CATEGORY[nextCategory] || 0
-            const special = DEFAULT_SPECIAL_PRICE_BY_CATEGORY[nextCategory] || 0
             setDraft((p) => ({
               ...p,
               audience,
@@ -1463,7 +1430,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
               price: base,
               price_tier3: base,
               price_tier10: base,
-              special_price: special,
+              special_price: base,
             }))
           }}
         >
@@ -1480,7 +1447,6 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
           onChange={(e) => {
             const category = e.target.value
             const base = DEFAULT_PRICE_BY_CATEGORY[category] || 0
-            const special = DEFAULT_SPECIAL_PRICE_BY_CATEGORY[category] || 0
             setDraft((p) => ({
               ...p,
               category,
@@ -1488,7 +1454,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
               price: base,
               price_tier3: base,
               price_tier10: base,
-              special_price: special,
+              special_price: base,
             }))
           }}
         >
@@ -1577,7 +1543,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
         <input
           style={styles.input}
           type="number"
-          placeholder="Precio especial"
+          placeholder="Precio especial base"
           value={draft.special_price}
           onChange={(e) => setDraft((p) => ({ ...p, special_price: Number(e.target.value) }))}
         />
@@ -1757,6 +1723,83 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
   )
 }
 
+function ProductTierPricesEditor({ product, priceRows, fetchTierPrices }) {
+  const [draft, setDraft] = useState(
+    Object.fromEntries(CLIENT_TIERS.map((tier) => [tier, 0]))
+  )
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    const next = Object.fromEntries(CLIENT_TIERS.map((tier) => [tier, 0]))
+    for (const row of priceRows.filter((r) => r.product_id === product.id)) {
+      next[row.client_tier] = Number(row.price || 0)
+    }
+    setDraft(next)
+  }, [product.id, priceRows])
+
+  const savePrices = async () => {
+    setSaving(true)
+
+    for (const tier of CLIENT_TIERS) {
+      const value = Number(draft[tier] || 0)
+      const existing = priceRows.find((r) => r.product_id === product.id && r.client_tier === tier)
+
+      if (existing) {
+        const { error } = await supabase.from('product_customer_prices').update({ price: value }).eq('id', existing.id)
+        if (error) {
+          setSaving(false)
+          alert(`No se pudo guardar ${tier}: ${error.message}`)
+          return
+        }
+      } else {
+        const { error } = await supabase.from('product_customer_prices').insert([
+          {
+            product_id: product.id,
+            client_tier: tier,
+            price: value,
+          },
+        ])
+        if (error) {
+          setSaving(false)
+          alert(`No se pudo crear ${tier}: ${error.message}`)
+          return
+        }
+      }
+    }
+
+    setSaving(false)
+    await fetchTierPrices()
+    alert('Precios por categoría guardados.')
+  }
+
+  return (
+    <div style={{ marginTop: 16, borderTop: '1px solid #e5e7eb', paddingTop: 16 }}>
+      <p style={{ marginTop: 0, fontWeight: 800, fontSize: 18 }}>Precios por categoría de cliente</p>
+
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(5, 1fr)' }}>
+        {CLIENT_TIERS.map((tier) => (
+          <div key={tier} style={{ background: '#f8fafc', borderRadius: 16, padding: 12 }}>
+            <p style={{ marginTop: 0, fontWeight: 700, fontSize: 14 }}>{tier}</p>
+            <input
+              type="number"
+              style={styles.input}
+              value={draft[tier]}
+              onChange={(e) => setDraft((p) => ({ ...p, [tier]: Number(e.target.value) }))}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <button type="button" style={styles.buttonPrimary} onClick={savePrices} disabled={saving}>
+          <Save size={16} />
+          {saving ? 'Guardando...' : 'Guardar precios por categoría'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
   const [draft, setDraft] = useState(emptySpecialClient)
   const [editingId, setEditingId] = useState(null)
@@ -1780,8 +1823,7 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
       phone: draft.phone.trim(),
       client_code: draft.client_code.trim(),
       qr_value: (draft.qr_value || draft.client_code).trim(),
-      price_mode: draft.price_mode || 'special_price',
-      discount_percent: Number(draft.discount_percent || 0),
+      client_tier: draft.client_tier || 'Plata',
       active: draft.active !== false,
       notes: draft.notes || '',
     }
@@ -1811,8 +1853,7 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
       phone: client.phone || '',
       client_code: client.client_code || '',
       qr_value: client.qr_value || '',
-      price_mode: client.price_mode || 'special_price',
-      discount_percent: Number(client.discount_percent || 0),
+      client_tier: client.client_tier || 'Plata',
       active: client.active !== false,
       notes: client.notes || '',
     })
@@ -1832,11 +1873,7 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
   }
 
   const toggleClient = async (client) => {
-    const { error } = await supabase
-      .from('special_clients')
-      .update({ active: !client.active })
-      .eq('id', client.id)
-
+    const { error } = await supabase.from('special_clients').update({ active: !client.active }).eq('id', client.id)
     if (error) {
       alert(`No se pudo actualizar cliente: ${error.message}`)
       return
@@ -1852,7 +1889,7 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
         <div>
           <h3 style={{ margin: 0, fontSize: 26 }}>Clientes especiales</h3>
           <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
-            Aquí puedes registrar clientes con código y precio especial.
+            Aquí puedes registrar clientes con código, categoría y acceso especial.
           </p>
         </div>
       </div>
@@ -1888,20 +1925,24 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
 
         <select
           style={styles.input}
-          value={draft.price_mode}
-          onChange={(e) => setDraft((p) => ({ ...p, price_mode: e.target.value }))}
+          value={draft.client_tier}
+          onChange={(e) => setDraft((p) => ({ ...p, client_tier: e.target.value }))}
         >
-          <option value="special_price">Usar special_price</option>
-          <option value="discount_percent">Usar descuento %</option>
+          {CLIENT_TIERS.map((tier) => (
+            <option key={tier} value={tier}>{tier}</option>
+          ))}
         </select>
 
-        <input
-          type="number"
-          style={styles.input}
-          placeholder="Descuento %"
-          value={draft.discount_percent}
-          onChange={(e) => setDraft((p) => ({ ...p, discount_percent: Number(e.target.value) }))}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={draft.active}
+              onChange={(e) => setDraft((p) => ({ ...p, active: e.target.checked }))}
+            />
+            Activo
+          </label>
+        </div>
 
         <textarea
           style={{ ...styles.textarea, gridColumn: '1 / -1' }}
@@ -1912,15 +1953,6 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
       </div>
 
       <div style={{ display: 'flex', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={draft.active}
-            onChange={(e) => setDraft((p) => ({ ...p, active: e.target.checked }))}
-          />
-          Activo
-        </label>
-
         <button type="button" style={styles.buttonPrimary} onClick={saveClient} disabled={loading}>
           <Save size={16} />
           {editingId ? 'Guardar cliente' : 'Agregar cliente'}
@@ -1940,9 +1972,7 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
                 <div style={{ marginTop: 8, color: '#6b7280' }}>Código: {client.client_code}</div>
                 <div style={{ marginTop: 4, color: '#6b7280' }}>QR: {client.qr_value}</div>
                 <div style={{ marginTop: 4, color: '#6b7280' }}>Tel: {client.phone || '-'}</div>
-                <div style={{ marginTop: 4, color: '#6b7280' }}>
-                  Modo: {client.price_mode} {client.discount_percent ? `(${client.discount_percent}%)` : ''}
-                </div>
+                <div style={{ marginTop: 4, color: '#6b7280' }}>Categoría: {client.client_tier || 'Plata'}</div>
               </div>
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -2004,17 +2034,18 @@ function StoreView({
   setSpecialCode,
   loginSpecialClient,
   logoutSpecialClient,
+  getDisplayPrice,
+  getCartUnitPrice,
 }) {
   const [openMegaMenu, setOpenMegaMenu] = useState(false)
   const [megaAudience, setMegaAudience] = useState('Hombre')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [improvePriceOpen, setImprovePriceOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(false)
 
   const visibleBrands = uniqueValues([...BRANDS, ...products.map((p) => p.brand)])
   const visibleCategories = getAudienceCategories(storeAudience, customCategories).filter((c) => c !== 'Playera')
 
   const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
-  const tier = currentTier(totalPieces)
 
   const filteredProducts = useMemo(() => {
     let list = [...products].filter((p) => p.active)
@@ -2052,9 +2083,7 @@ function StoreView({
   }, [products, storeAudience, storeCategory, storeBrand, storeFit, search])
 
   const subtotalPreview = cart.reduce((sum, item) => {
-    const unit = specialClientSession?.active
-      ? Number(item.product.special_price || item.product.price || 0)
-      : Number(item.product[tier.key] || item.product.price || 0)
+    const unit = getCartUnitPrice(item.product)
     return sum + unit * Number(item.quantity || 0)
   }, 0)
 
@@ -2073,20 +2102,20 @@ function StoreView({
         <div style={{ ...styles.container, position: 'relative' }}>
           <div
             style={{
-              minHeight: 82,
+              minHeight: isMobile ? 76 : 82,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              gap: 20,
+              gap: 14,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-              <img src={STORE_LOGO} alt={STORE_NAME} style={{ width: isMobile ? 96 : 132, objectFit: 'contain' }} />
+              <img src={STORE_LOGO} alt={STORE_NAME} style={{ width: isMobile ? 110 : 132, objectFit: 'contain' }} />
             </div>
 
             {!isMobile ? (
               <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-                {AUDIENCES.filter((x) => x !== 'Todo').map((aud) => (
+                {['Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta'].map((aud) => (
                   <button
                     key={aud}
                     type="button"
@@ -2114,12 +2143,27 @@ function StoreView({
                     {aud}
                   </button>
                 ))}
+
+                <button
+                  type="button"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: 16,
+                    cursor: 'pointer',
+                    paddingBottom: 10,
+                  }}
+                >
+                  Mejora tu precio
+                </button>
               </nav>
             ) : null}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {!isMobile ? (
-                <div style={{ position: 'relative', width: 260 }}>
+                <div style={{ position: 'relative', width: 250 }}>
                   <Search size={17} color="#9ca3af" style={{ position: 'absolute', top: 14, left: 12 }} />
                   <input
                     style={{
@@ -2136,11 +2180,9 @@ function StoreView({
                 </div>
               ) : null}
 
-              {!isMobile ? (
-                <button type="button" style={styles.buttonSecondary} onClick={() => setImprovePriceOpen(true)}>
-                  Mejora tu precio
-                </button>
-              ) : null}
+              <button type="button" style={styles.buttonSecondary} onClick={() => setLoginOpen(true)}>
+                Inicia sesión
+              </button>
 
               {isMobile ? (
                 <button
@@ -2182,7 +2224,7 @@ function StoreView({
         customFits={customFits}
       />
 
-      <section style={{ padding: '28px 0 14px' }}>
+      <section style={{ padding: isMobile ? '16px 0 10px' : '28px 0 14px' }}>
         <div style={styles.container}>
           <div
             style={{
@@ -2192,28 +2234,31 @@ function StoreView({
               alignItems: 'start',
             }}
           >
-            <div>
-              <h1
-                style={{
-                  margin: 0,
-                  fontSize: isMobile ? 34 : 52,
-                  lineHeight: 1.02,
-                  fontWeight: 800,
-                  maxWidth: 660,
-                }}
-              >
-                Aparta mercancía y desbloquea mejor precio por volumen.
-              </h1>
-            </div>
+            {!isMobile ? (
+              <div>
+                <h1
+                  style={{
+                    margin: 0,
+                    fontSize: 46,
+                    lineHeight: 1.02,
+                    fontWeight: 800,
+                    maxWidth: 660,
+                  }}
+                >
+                  Aparta mercancía y desbloquea mejor precio por volumen.
+                </h1>
+              </div>
+            ) : null}
 
-            <div style={{ ...styles.card, padding: 22, display: 'grid', gap: 12 }}>
+            <div style={{ ...styles.card, padding: isMobile ? 18 : 22, display: 'grid', gap: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
                 <div>
                   <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Nivel actual</p>
-                  <h2 style={{ margin: '5px 0 0', fontSize: isMobile ? 28 : 34 }}>
-                    {specialClientSession?.active ? 'Precio especial' : tier.label}
+                  <h2 style={{ margin: '5px 0 0', fontSize: isMobile ? 26 : 34 }}>
+                    {specialClientSession?.active ? `Cliente ${specialClientSession.client_tier}` : 'Precio normal'}
                   </h2>
                 </div>
+
                 <div
                   style={{
                     background: '#f3f4f6',
@@ -2239,64 +2284,35 @@ function StoreView({
                   <p style={{ margin: '6px 0 0', fontWeight: 700 }}>Piezas mixtas</p>
                   <p style={{ margin: '8px 0 0', color: '#d97706', fontSize: 14 }}>
                     {specialClientSession?.active
-                      ? 'Tu código especial ya está activo.'
-                      : totalPieces >= 10
-                        ? 'Ya tienes el mejor precio disponible.'
-                        : totalPieces >= 3
-                          ? `Te faltan ${10 - totalPieces} pieza(s) para desbloquear el precio de 10+ piezas.`
-                          : `Te faltan ${3 - totalPieces} pieza(s) para desbloquear el precio de 3+ piezas.`}
+                      ? 'Tu sesión de cliente ya está activa.'
+                      : 'Agrega productos y el sistema calculará tu precio automáticamente.'}
                   </p>
                 </div>
               </div>
-
-              {isMobile ? (
-                <button type="button" style={{ ...styles.buttonSecondary, marginTop: 6 }} onClick={() => setImprovePriceOpen(true)}>
-                  Mejora tu precio
-                </button>
-              ) : null}
             </div>
           </div>
         </div>
       </section>
 
-      <section style={{ paddingBottom: 24 }}>
+      <section style={{ paddingBottom: 18 }}>
         <div style={styles.container}>
           <div
             style={{
               display: 'grid',
               gap: 14,
-              gridTemplateColumns: isMobile ? '1fr' : '1.25fr .8fr .9fr .9fr',
+              gridTemplateColumns: isMobile ? '1fr' : '1.25fr .9fr .9fr',
               alignItems: 'center',
             }}
           >
-            {isMobile ? (
-              <div style={{ position: 'relative' }}>
-                <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
-                <input
-                  style={{ ...styles.input, paddingLeft: 36 }}
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Buscar producto"
-                />
-              </div>
-            ) : (
-              <div />
-            )}
-
-            <select
-              style={styles.input}
-              value={storeAudience}
-              onChange={(e) => {
-                setStoreAudience(e.target.value)
-                setStoreCategory('Todos')
-                setStoreBrand('Todas')
-                setStoreFit('Todos')
-              }}
-            >
-              {AUDIENCES.map((aud) => (
-                <option key={aud} value={aud}>{aud}</option>
-              ))}
-            </select>
+            <div style={{ position: 'relative' }}>
+              <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
+              <input
+                style={{ ...styles.input, paddingLeft: 36 }}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar producto"
+              />
+            </div>
 
             <select
               style={styles.input}
@@ -2336,8 +2352,9 @@ function StoreView({
             <div
               style={{
                 display: 'grid',
-                gap: 22,
+                gap: isMobile ? 12 : 22,
                 gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))',
+                alignItems: 'start',
               }}
             >
               {filteredProducts.map((product) => (
@@ -2355,6 +2372,8 @@ function StoreView({
                     })
                   }
                   specialClientSession={specialClientSession}
+                  getDisplayPrice={getDisplayPrice}
+                  isMobile={isMobile}
                 />
               ))}
             </div>
@@ -2370,6 +2389,7 @@ function StoreView({
         setCustomer={setCustomer}
         sendOrder={sendOrder}
         specialClientSession={specialClientSession}
+        getCartUnitPrice={getCartUnitPrice}
       />
 
       <ProductLightbox
@@ -2385,13 +2405,12 @@ function StoreView({
         onClose={() => setGallery({ open: false, product: null, imageIndex: 0 })}
       />
 
-      <ImprovePriceModal
-        open={improvePriceOpen}
-        onClose={() => setImprovePriceOpen(false)}
+      <LoginClientModal
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
         specialCode={specialCode}
         setSpecialCode={setSpecialCode}
         loginSpecialClient={loginSpecialClient}
-        scanningMessage="La función de escaneo rápido queda preparada. En la siguiente etapa conectamos cámara real para QR."
         specialClientSession={specialClientSession}
         logoutSpecialClient={logoutSpecialClient}
       />
@@ -2406,6 +2425,8 @@ function AdminView({
   setLoading,
   specialClients,
   fetchSpecialClients,
+  productTierPrices,
+  fetchTierPrices,
 }) {
   const isMobile = useIsMobile()
   const [adminSearch, setAdminSearch] = useState('')
@@ -2450,12 +2471,26 @@ function AdminView({
     setLoading(true)
     const clean = prepareDraftForSave(newProductDraft)
     const payload = productToDb(clean)
-    const { error } = await supabase.from('products').insert([payload])
+    const { data, error } = await supabase.from('products').insert([payload]).select()
     setLoading(false)
 
     if (error) {
       alert(`No se pudo crear el producto: ${error.message}`)
       return
+    }
+
+    const inserted = data?.[0]
+    if (inserted?.id) {
+      for (const tier of CLIENT_TIERS) {
+        await supabase.from('product_customer_prices').insert([
+          {
+            product_id: inserted.id,
+            client_tier: tier,
+            price: Number(clean.special_price || clean.price || 0),
+          },
+        ])
+      }
+      await fetchTierPrices()
     }
 
     setNewProductDraft(buildEmptyProduct())
@@ -2506,12 +2541,16 @@ function AdminView({
   const deleteProduct = async (id) => {
     const ok = window.confirm('¿Seguro que deseas eliminar este producto?')
     if (!ok) return
+
+    await supabase.from('product_customer_prices').delete().eq('product_id', id)
+
     const { error } = await supabase.from('products').delete().eq('id', id)
     if (error) {
       alert(`No se pudo eliminar: ${error.message}`)
       return
     }
     await fetchProducts()
+    await fetchTierPrices()
   }
 
   return (
@@ -2525,7 +2564,7 @@ function AdminView({
                 <div>
                   <h2 style={{ margin: 0, fontSize: 32 }}>Panel admin</h2>
                   <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
-                    Administra catálogo, marcas, fit, tallas, stock y precios.
+                    Administra catálogo, marcas, fit, tallas, stock, clientes y precios por categoría.
                   </p>
                 </div>
               </div>
@@ -2620,69 +2659,73 @@ function AdminView({
                         />
                       </>
                     ) : (
-                      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '110px 1fr auto' }}>
-                        <div style={{ borderRadius: 18, overflow: 'hidden', background: '#f3f4f6' }}>
-                          {getCover(product) ? (
-                            <img src={getCover(product)} alt={product.name} style={{ width: '100%', height: 110, objectFit: 'cover' }} />
-                          ) : (
-                            <div style={{ width: '100%', height: 110, display: 'grid', placeItems: 'center' }}>
-                              <ImageIcon size={32} color="#9ca3af" />
-                            </div>
-                          )}
-                        </div>
-
-                        <div>
-                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                            <h4 style={{ margin: 0, fontSize: 22 }}>{product.name}</h4>
-                            <Badge>{product.audience}</Badge>
-                            <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
-                            {product.category === 'Jeans' && product.subcategory ? (
-                              <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge>
-                            ) : null}
+                      <>
+                        <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '110px 1fr auto' }}>
+                          <div style={{ borderRadius: 18, overflow: 'hidden', background: '#f3f4f6' }}>
+                            {getCover(product) ? (
+                              <img src={getCover(product)} alt={product.name} style={{ width: '100%', height: 110, objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ width: '100%', height: 110, display: 'grid', placeItems: 'center' }}>
+                                <ImageIcon size={32} color="#9ca3af" />
+                              </div>
+                            )}
                           </div>
 
-                          <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category}</p>
+                          <div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <h4 style={{ margin: 0, fontSize: 22 }}>{product.name}</h4>
+                              <Badge>{product.audience}</Badge>
+                              <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
+                              {product.category === 'Jeans' && product.subcategory ? (
+                                <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge>
+                              ) : null}
+                            </div>
 
-                          <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 12 }}>
-                            <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
-                              <small style={{ color: '#6b7280' }}>Normal</small>
-                              <div style={{ fontWeight: 800 }}>{mxn(product.price)}</div>
+                            <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category}</p>
+
+                            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 12 }}>
+                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
+                                <small style={{ color: '#6b7280' }}>Normal</small>
+                                <div style={{ fontWeight: 800 }}>{mxn(product.price)}</div>
+                              </div>
+                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
+                                <small style={{ color: '#6b7280' }}>3+</small>
+                                <div style={{ fontWeight: 800 }}>{mxn(product.price_tier3)}</div>
+                              </div>
+                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
+                                <small style={{ color: '#6b7280' }}>10+</small>
+                                <div style={{ fontWeight: 800 }}>{mxn(product.price_tier10)}</div>
+                              </div>
+                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
+                                <small style={{ color: '#6b7280' }}>Especial base</small>
+                                <div style={{ fontWeight: 800 }}>{mxn(product.special_price)}</div>
+                              </div>
                             </div>
-                            <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
-                              <small style={{ color: '#6b7280' }}>3+</small>
-                              <div style={{ fontWeight: 800 }}>{mxn(product.price_tier3)}</div>
-                            </div>
-                            <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
-                              <small style={{ color: '#6b7280' }}>10+</small>
-                              <div style={{ fontWeight: 800 }}>{mxn(product.price_tier10)}</div>
-                            </div>
-                            <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
-                              <small style={{ color: '#6b7280' }}>Especial</small>
-                              <div style={{ fontWeight: 800 }}>{mxn(product.special_price)}</div>
-                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: 8 }}>
+                            <button type="button" style={styles.buttonSecondary} onClick={() => startEdit(product)}>
+                              <Pencil size={16} />
+                              Editar
+                            </button>
+
+                            <button type="button" style={styles.buttonSecondary} onClick={() => toggleActive(product.id, !product.active)}>
+                              {product.active ? 'Ocultar' : 'Activar'}
+                            </button>
+
+                            <button type="button" style={styles.buttonSecondary} onClick={() => deleteProduct(product.id)}>
+                              <Trash2 size={16} />
+                              Eliminar
+                            </button>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: 8 }}>
-                          <button type="button" style={styles.buttonSecondary} onClick={() => startEdit(product)}>
-                            <Pencil size={16} />
-                            Editar
-                          </button>
-
-                          <button
-                            type="button"
-                            style={styles.buttonSecondary}
-                            onClick={() => toggleActive(product.id, !product.active)}
-                          >
-                            {product.active ? 'Ocultar' : 'Activar'}
-                          </button>
-
-                          <button type="button" style={styles.buttonSecondary} onClick={() => deleteProduct(product.id)}>
-                            <Trash2 size={16} />
-                            Eliminar
-                          </button>
-                        </div>
-                      </div>
+                        <ProductTierPricesEditor
+                          product={product}
+                          priceRows={productTierPrices}
+                          fetchTierPrices={fetchTierPrices}
+                        />
+                      </>
                     )}
                   </div>
                 ))}
@@ -2716,7 +2759,7 @@ function AdminLogin({ loginForm, setLoginForm, loginError, showPassword, setShow
           <div style={{ ...styles.card, padding: 28 }}>
             <h2 style={{ margin: 0, fontSize: isMobile ? 36 : 48 }}>Panel administrador</h2>
             <p style={{ marginTop: 12, color: '#6b7280', lineHeight: 1.7 }}>
-              Aquí administrarás productos, marcas, fit, tallas, stock, precios y clientes especiales.
+              Aquí administrarás productos, precios y clientes especiales.
             </p>
           </div>
 
@@ -2782,6 +2825,7 @@ export default function App() {
   const isMobile = useIsMobile()
   const [products, setProducts] = useState([])
   const [specialClients, setSpecialClients] = useState([])
+  const [productTierPrices, setProductTierPrices] = useState([])
   const [loading, setLoading] = useState(false)
 
   const [route, setRoute] = useState(
@@ -2833,9 +2877,19 @@ export default function App() {
     setSpecialClients(data || [])
   }
 
+  async function fetchTierPrices() {
+    const { data, error } = await supabase.from('product_customer_prices').select('*')
+    if (error) {
+      alert(`No se pudieron leer precios por categoría: ${error.message}`)
+      return
+    }
+    setProductTierPrices(data || [])
+  }
+
   useEffect(() => {
     fetchProducts()
     fetchSpecialClients()
+    fetchTierPrices()
   }, [])
 
   useEffect(() => {
@@ -2864,6 +2918,34 @@ export default function App() {
       products.map((p) => p.subcategory).filter((sub) => sub && !JEANS_FITS.includes(sub))
     )
   }, [products])
+
+  const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
+
+  const tier = currentTier(totalPieces)
+
+  const findTierPrice = (productId, clientTier) => {
+    return productTierPrices.find((row) => row.product_id === productId && row.client_tier === clientTier)
+  }
+
+  const getDisplayPrice = (product) => {
+    if (specialClientSession?.active) {
+      const row = findTierPrice(product.id, specialClientSession.client_tier)
+      if (row) return Number(row.price || 0)
+      return Number(product.special_price || product.price || 0)
+    }
+
+    return Number(product.price || 0)
+  }
+
+  const getCartUnitPrice = (product) => {
+    if (specialClientSession?.active) {
+      const row = findTierPrice(product.id, specialClientSession.client_tier)
+      if (row) return Number(row.price || 0)
+      return Number(product.special_price || product.price || 0)
+    }
+
+    return Number(product[tier.key] || product.price || 0)
+  }
 
   const addToCart = (product) => {
     const selection = selectedConfig[product.id]
@@ -2928,7 +3010,7 @@ export default function App() {
     setSpecialClientSession(client)
     localStorage.setItem(SPECIAL_CLIENT_SESSION_KEY, JSON.stringify(client))
     setSpecialCode('')
-    alert(`Cliente especial detectado: ${client.name}`)
+    alert(`Sesión iniciada: ${client.name}`)
   }
 
   const logoutSpecialClient = () => {
@@ -2947,42 +3029,36 @@ export default function App() {
       return
     }
 
-    const totalPieces = cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
-    const tier = currentTier(totalPieces)
-
-    const getUnitPrice = (product) => {
-      if (specialClientSession?.active) {
-        if (specialClientSession.price_mode === 'discount_percent' && Number(specialClientSession.discount_percent || 0) > 0) {
-          const base = Number(product.price || 0)
-          return Math.round(base * (1 - Number(specialClientSession.discount_percent || 0) / 100))
-        }
-        return Number(product.special_price || product.price || 0)
-      }
-      return Number(product[tier.key] || product.price || 0)
-    }
-
-    const subtotal = cart.reduce((sum, item) => sum + getUnitPrice(item.product) * Number(item.quantity || 0), 0)
+    const subtotal = cart.reduce((sum, item) => sum + getCartUnitPrice(item.product) * Number(item.quantity || 0), 0)
 
     try {
       setLoading(true)
+
+      const specialLabel = specialClientSession?.active
+        ? `Cliente ${specialClientSession.client_tier}`
+        : tier.label
+
+      const noteWithClient = specialClientSession?.active
+        ? `${customer.notes || ''} | Cliente especial: ${specialClientSession.name} (${specialClientSession.client_tier})`
+        : customer.notes || ''
 
       const orderPayload = {
         customer_name: customer.name || '',
         customer_phone: customer.phone || '',
         customer_city: customer.city || '',
         delivery: customer.delivery || '',
-        notes: customer.notes || '',
+        notes: noteWithClient,
         items_json: cart.map((item) => ({
           product_id: item.product.id,
           name: item.product.name,
           size: item.size,
           quantity: item.quantity,
-          unit_price: getUnitPrice(item.product),
-          total: getUnitPrice(item.product) * Number(item.quantity || 0),
+          unit_price: getCartUnitPrice(item.product),
+          total: getCartUnitPrice(item.product) * Number(item.quantity || 0),
         })),
         total_pieces: totalPieces,
         subtotal,
-        price_level: specialClientSession?.active ? 'Precio especial cliente' : tier.label,
+        price_level: specialLabel,
         status: 'nuevo',
         whatsapp_sent: false,
       }
@@ -3020,13 +3096,13 @@ export default function App() {
 
       const itemsText = cart
         .map((item, idx) => {
-          const unit = getUnitPrice(item.product)
+          const unit = getCartUnitPrice(item.product)
           return `${idx + 1}. ${item.product.name} | Talla: ${item.size} | ${item.quantity} pz | ${mxn(unit)}`
         })
         .join('%0A')
 
       const specialText = specialClientSession?.active
-        ? `%0A*Cliente especial:* ${specialClientSession.name}%0A*Cód.:* ${specialClientSession.client_code}`
+        ? `%0A*Cliente especial:* ${specialClientSession.name}%0A*Cód.:* ${specialClientSession.client_code}%0A*Categoría:* ${specialClientSession.client_tier}`
         : ''
 
       const msg =
@@ -3038,7 +3114,7 @@ export default function App() {
         `*Notas:* ${customer.notes || '-'}${specialText}%0A%0A` +
         `*Productos:*%0A${itemsText}%0A%0A` +
         `*Piezas totales:* ${totalPieces}%0A` +
-        `*Nivel de precio:* ${specialClientSession?.active ? 'Precio especial cliente' : tier.label}%0A` +
+        `*Nivel de precio:* ${specialClientSession?.active ? `Cliente ${specialClientSession.client_tier}` : tier.label}%0A` +
         `*Total a pagar:* ${mxn(subtotal)}`
 
       const link = `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`
@@ -3107,6 +3183,8 @@ export default function App() {
           setSpecialCode={setSpecialCode}
           loginSpecialClient={loginSpecialClient}
           logoutSpecialClient={logoutSpecialClient}
+          getDisplayPrice={getDisplayPrice}
+          getCartUnitPrice={getCartUnitPrice}
         />
       ) : isAdminAuthenticated ? (
         <>
@@ -3162,6 +3240,8 @@ export default function App() {
             setLoading={setLoading}
             specialClients={specialClients}
             fetchSpecialClients={fetchSpecialClients}
+            productTierPrices={productTierPrices}
+            fetchTierPrices={fetchTierPrices}
           />
         </>
       ) : (
