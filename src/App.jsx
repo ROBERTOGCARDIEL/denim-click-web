@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Search,
   Menu,
@@ -442,6 +442,174 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
   )
 }
 
+function ScannerModal({ open, onClose, onDetected }) {
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+  const frameRef = useRef(null)
+  const [status, setStatus] = useState('Inicializando cámara...')
+
+  useEffect(() => {
+    if (!open) return
+
+    let stopped = false
+
+    const stopCamera = () => {
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current)
+        frameRef.current = null
+      }
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
+    }
+
+    const startScanner = async () => {
+      try {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          setStatus('Tu navegador no permite abrir la cámara.')
+          return
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
+          },
+          audio: false,
+        })
+
+        if (stopped) {
+          stream.getTracks().forEach((track) => track.stop())
+          return
+        }
+
+        streamRef.current = stream
+
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+        }
+
+        if (!('BarcodeDetector' in window)) {
+          setStatus('La cámara ya está abierta, pero este navegador no soporta lectura automática de QR o código de barras.')
+          return
+        }
+
+        const detector = new window.BarcodeDetector({
+          formats: [
+            'qr_code',
+            'code_128',
+            'code_39',
+            'code_93',
+            'ean_13',
+            'ean_8',
+            'upc_a',
+            'upc_e',
+            'itf',
+            'codabar',
+          ],
+        })
+
+        setStatus('Apunta la cámara al código o QR.')
+
+        const scan = async () => {
+          if (stopped) return
+
+          try {
+            const video = videoRef.current
+            if (video && video.readyState >= 2) {
+              const codes = await detector.detect(video)
+              if (codes?.length) {
+                const value = String(codes[0].rawValue || '').trim()
+                if (value) {
+                  stopCamera()
+                  onDetected(value)
+                  onClose()
+                  return
+                }
+              }
+            }
+          } catch {
+          }
+
+          frameRef.current = requestAnimationFrame(scan)
+        }
+
+        scan()
+      } catch {
+        setStatus('No se pudo abrir la cámara. Revisa permisos del navegador.')
+      }
+    }
+
+    startScanner()
+
+    return () => {
+      stopped = true
+      stopCamera()
+    }
+  }, [open, onClose, onDetected])
+
+  if (!open) return null
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,.7)',
+        zIndex: 90,
+        display: 'grid',
+        placeItems: 'center',
+        padding: 18,
+      }}
+    >
+      <div style={{ ...styles.card, width: '100%', maxWidth: 620, padding: 18 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 26 }}>Escanear código</h3>
+            <p style={{ margin: '6px 0 0', color: '#6b7280' }}>{status}</p>
+          </div>
+
+          <button type="button" onClick={onClose} style={styles.buttonSecondary}>
+            <X size={16} />
+          </button>
+        </div>
+
+        <div
+          style={{
+            marginTop: 16,
+            borderRadius: 20,
+            overflow: 'hidden',
+            background: '#000',
+            aspectRatio: '4 / 3',
+            display: 'grid',
+            placeItems: 'center',
+          }}
+        >
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+            }}
+          />
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <button type="button" style={styles.buttonSecondary} onClick={onClose}>
+            Cerrar escáner
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function LoginClientModal({
   open,
   onClose,
@@ -451,82 +619,89 @@ function LoginClientModal({
   specialClientSession,
   logoutSpecialClient,
 }) {
+  const [scannerOpen, setScannerOpen] = useState(false)
+
   if (!open) return null
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,.45)',
-        zIndex: 70,
-        display: 'grid',
-        placeItems: 'center',
-        padding: 18,
-      }}
-    >
-      <div style={{ ...styles.card, width: '100%', maxWidth: 560, padding: 24 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <div>
-            <h3 style={{ margin: 0, fontSize: 30 }}>Inicia sesión</h3>
-            <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
-              Entra con tu ID o código de cliente.
-            </p>
+    <>
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(0,0,0,.45)',
+          zIndex: 70,
+          display: 'grid',
+          placeItems: 'center',
+          padding: 18,
+        }}
+      >
+        <div style={{ ...styles.card, width: '100%', maxWidth: 560, padding: 24 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div>
+              <h3 style={{ margin: 0, fontSize: 30 }}>Inicia sesión</h3>
+              <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+                Entra con tu ID o código de cliente.
+              </p>
+            </div>
+
+            <button type="button" onClick={onClose} style={styles.buttonSecondary}>
+              <X size={16} />
+            </button>
           </div>
 
-          <button type="button" onClick={onClose} style={styles.buttonSecondary}>
-            <X size={16} />
-          </button>
+          {specialClientSession ? (
+            <div style={{ marginTop: 18, border: '1px solid #e5e7eb', borderRadius: 20, padding: 16 }}>
+              <p style={{ margin: 0, fontWeight: 800, fontSize: 20 }}>Cliente activo</p>
+              <p style={{ margin: '8px 0 0' }}><strong>Nombre:</strong> {specialClientSession.name}</p>
+              <p style={{ margin: '8px 0 0' }}><strong>Código:</strong> {specialClientSession.client_code}</p>
+              <p style={{ margin: '8px 0 0' }}><strong>Categoría:</strong> {specialClientSession.client_tier}</p>
+
+              <div style={{ marginTop: 14 }}>
+                <button type="button" style={styles.buttonSecondary} onClick={logoutSpecialClient}>
+                  Cerrar sesión
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: 18, display: 'grid', gap: 14 }}>
+              <input
+                style={styles.input}
+                placeholder="Escribe tu ID o código"
+                value={specialCode}
+                onChange={(e) => setSpecialCode(e.target.value)}
+              />
+
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <button type="button" style={styles.buttonPrimary} onClick={() => loginSpecialClient(specialCode)}>
+                  <Lock size={16} />
+                  Entrar
+                </button>
+
+                <button
+                  type="button"
+                  style={styles.buttonSecondary}
+                  onClick={() => setScannerOpen(true)}
+                >
+                  <ScanLine size={16} />
+                  Escanear código
+                </button>
+              </div>
+
+              <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>
+                También puedes abrir la cámara para leer QR o código de barras.
+              </p>
+            </div>
+          )}
         </div>
-
-        {specialClientSession ? (
-          <div style={{ marginTop: 18, border: '1px solid #e5e7eb', borderRadius: 20, padding: 16 }}>
-            <p style={{ margin: 0, fontWeight: 800, fontSize: 20 }}>Cliente activo</p>
-            <p style={{ margin: '8px 0 0' }}><strong>Nombre:</strong> {specialClientSession.name}</p>
-            <p style={{ margin: '8px 0 0' }}><strong>Código:</strong> {specialClientSession.client_code}</p>
-            <p style={{ margin: '8px 0 0' }}><strong>Categoría:</strong> {specialClientSession.client_tier}</p>
-
-            <div style={{ marginTop: 14 }}>
-              <button type="button" style={styles.buttonSecondary} onClick={logoutSpecialClient}>
-                Cerrar sesión
-              </button>
-            </div>
-          </div>
-        ) : (
-          <div style={{ marginTop: 18, display: 'grid', gap: 14 }}>
-            <input
-              style={styles.input}
-              placeholder="Escribe tu ID o código"
-              value={specialCode}
-              onChange={(e) => setSpecialCode(e.target.value)}
-            />
-
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <button type="button" style={styles.buttonPrimary} onClick={() => loginSpecialClient(specialCode)}>
-                <Lock size={16} />
-                Entrar
-              </button>
-
-              <button
-                type="button"
-                style={styles.buttonSecondary}
-                onClick={() => {
-                  const fakeScan = prompt('Pega aquí el valor del QR o código del cliente')
-                  if (fakeScan) loginSpecialClient(fakeScan)
-                }}
-              >
-                <ScanLine size={16} />
-                Escanear código
-              </button>
-            </div>
-
-            <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>
-              El escaneo queda preparado. En la siguiente etapa conectamos cámara real para QR.
-            </p>
-          </div>
-        )}
       </div>
-    </div>
+
+      <ScannerModal
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onDetected={(value) => loginSpecialClient(value)}
+      />
+    </>
   )
 }
 
@@ -694,21 +869,6 @@ function DesktopMegaMenu({
                 }}
               >
                 Ver todo {activeAudience}
-              </button>
-
-              <button
-                type="button"
-                style={{
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#d1d5db',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  padding: 0,
-                  fontSize: 16,
-                }}
-              >
-                Mejora tu precio
               </button>
             </div>
           </div>
