@@ -2403,6 +2403,10 @@ function StoreView({
   const visibleBrands = uniqueValues([...BRANDS, ...products.map((p) => p.brand)])
   const visibleCategories = getAudienceCategories(storeAudience, customCategories).filter((c) => c !== 'Playera')
   const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
+   
+  const firstClientName = specialClientSession?.name
+    ? String(specialClientSession.name).trim().split(' ')[0]
+    : ''
 
   const filteredProducts = useMemo(() => {
     let list = [...products].filter((p) => p.active)
@@ -2526,9 +2530,22 @@ function StoreView({
                 </div>
               ) : null}
 
-              <button type="button" style={styles.buttonSecondary} onClick={() => setLoginOpen(true)}>
-                Inicia sesión
-              </button>
+                            {specialClientSession?.active ? (
+                <button
+                  type="button"
+                  style={{
+                    ...styles.buttonSecondary,
+                    fontWeight: 800,
+                  }}
+                  onClick={() => setLoginOpen(true)}
+                >
+                  Bienvenido, {firstClientName}
+                </button>
+              ) : (
+                <button type="button" style={styles.buttonSecondary} onClick={() => setLoginOpen(true)}>
+                  Inicia sesión
+                </button>
+              )}
 
               {isMobile ? (
                 <button
