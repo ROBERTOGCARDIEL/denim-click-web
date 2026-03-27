@@ -466,12 +466,10 @@ function ScannerModal({ open, onClose, onDetected }) {
         cancelAnimationFrame(frameRef.current)
         frameRef.current = null
       }
-
       if (warmupTimeoutRef.current) {
         clearTimeout(warmupTimeoutRef.current)
         warmupTimeoutRef.current = null
       }
-
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop())
         streamRef.current = null
@@ -2365,6 +2363,741 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
   )
 }
 
+function StoreView({
+  isMobile,
+  products,
+  search,
+  setSearch,
+  storeAudience,
+  setStoreAudience,
+  storeCategory,
+  setStoreCategory,
+  storeBrand,
+  setStoreBrand,
+  storeFit,
+  setStoreFit,
+  customCategories,
+  customFits,
+  selectedConfig,
+  setSelectedConfig,
+  addToCart,
+  cart,
+  setCart,
+  customer,
+  setCustomer,
+  sendOrder,
+  gallery,
+  setGallery,
+  specialClientSession,
+  specialCode,
+  setSpecialCode,
+  loginSpecialClient,
+  logoutSpecialClient,
+  getCartUnitPrice,
+}) {
+  const [openMegaMenu, setOpenMegaMenu] = useState(false)
+  const [megaAudience, setMegaAudience] = useState('Hombre')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(false)
+
+  const visibleBrands = uniqueValues([...BRANDS, ...products.map((p) => p.brand)])
+  const visibleCategories = getAudienceCategories(storeAudience, customCategories).filter((c) => c !== 'Playera')
+  const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
+
+  const filteredProducts = useMemo(() => {
+    let list = [...products].filter((p) => p.active)
+
+    if (storeAudience !== 'Todo') list = list.filter((p) => p.audience === storeAudience)
+    if (storeCategory !== 'Todos') list = list.filter((p) => p.category === storeCategory)
+    if (storeBrand !== 'Todas') list = list.filter((p) => p.brand === storeBrand)
+    if (storeFit !== 'Todos') list = list.filter((p) => p.subcategory === storeFit)
+
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter((p) =>
+        `${p.name} ${p.category} ${p.subcategory} ${p.brand} ${p.audience}`.toLowerCase().includes(q)
+      )
+    }
+
+    list.sort((a, b) => {
+      const aPriority = (a.is_new ? 1000000 : 0) + Number(a.sales_count || 0) * 1000 + new Date(a.created_at || 0).getTime()
+      const bPriority = (b.is_new ? 1000000 : 0) + Number(b.sales_count || 0) * 1000 + new Date(b.created_at || 0).getTime()
+      return bPriority - aPriority
+    })
+
+    return list
+  }, [products, storeAudience, storeCategory, storeBrand, storeFit, search])
+
+  const subtotalPreview = cart.reduce((sum, item) => {
+    const unit = getCartUnitPrice(item.product)
+    return sum + unit * Number(item.quantity || 0)
+  }, 0)
+
+  return (
+    <>
+      <header
+        style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 20,
+          background: '#111315',
+          color: '#fff',
+          borderBottom: '1px solid rgba(255,255,255,.08)',
+        }}
+      >
+        <div style={{ ...styles.container, position: 'relative' }}>
+          <div
+            style={{
+              minHeight: isMobile ? 76 : 82,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 14,
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
+              <img src={STORE_LOGO} alt={STORE_NAME} style={{ width: isMobile ? 110 : 132, objectFit: 'contain' }} />
+            </div>
+
+            {!isMobile ? (
+              <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+                {['Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta'].map((aud) => (
+                  <button
+                    key={aud}
+                    type="button"
+                    onMouseEnter={() => {
+                      setMegaAudience(aud)
+                      setOpenMegaMenu(true)
+                    }}
+                    onClick={() => {
+                      setStoreAudience(aud)
+                      setStoreCategory('Todos')
+                      setStoreFit('Todos')
+                      setStoreBrand('Todas')
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#fff',
+                      fontWeight: 700,
+                      fontSize: 16,
+                      cursor: 'pointer',
+                      borderBottom: megaAudience === aud && openMegaMenu ? '2px solid #fff' : '2px solid transparent',
+                      paddingBottom: 10,
+                    }}
+                  >
+                    {aud}
+                  </button>
+                ))}
+
+                <button
+                  type="button"
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#fff',
+                    fontWeight: 700,
+                    fontSize: 16,
+                    cursor: 'pointer',
+                    paddingBottom: 10,
+                  }}
+                >
+                  Mejora tu precio
+                </button>
+              </nav>
+            ) : null}
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {!isMobile ? (
+                <div style={{ position: 'relative', width: 250 }}>
+                  <Search size={17} color="#9ca3af" style={{ position: 'absolute', top: 14, left: 12 }} />
+                  <input
+                    style={{
+                      ...styles.input,
+                      background: '#0b0c0d',
+                      border: '1px solid rgba(255,255,255,.12)',
+                      color: '#fff',
+                      paddingLeft: 36,
+                    }}
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Buscar"
+                  />
+                </div>
+              ) : null}
+
+              <button type="button" style={styles.buttonSecondary} onClick={() => setLoginOpen(true)}>
+                Inicia sesión
+              </button>
+
+              {isMobile ? (
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(true)}
+                  style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
+                >
+                  <Menu size={32} />
+                </button>
+              ) : null}
+            </div>
+          </div>
+
+          {!isMobile && openMegaMenu ? (
+            <DesktopMegaMenu
+              activeAudience={megaAudience}
+              closeMenu={() => setOpenMegaMenu(false)}
+              products={products}
+              setStoreAudience={setStoreAudience}
+              setStoreCategory={setStoreCategory}
+              setStoreBrand={setStoreBrand}
+              setStoreFit={setStoreFit}
+              customCategories={customCategories}
+              customFits={customFits}
+            />
+          ) : null}
+        </div>
+      </header>
+
+      <MobileMenu
+        open={mobileMenuOpen}
+        close={() => setMobileMenuOpen(false)}
+        products={products}
+        setStoreAudience={setStoreAudience}
+        setStoreCategory={setStoreCategory}
+        setStoreBrand={setStoreBrand}
+        setStoreFit={setStoreFit}
+        customCategories={customCategories}
+        customFits={customFits}
+      />
+
+      <section style={{ padding: isMobile ? '16px 0 10px' : '28px 0 14px' }}>
+        <div style={styles.container}>
+          <div
+            style={{
+              display: 'grid',
+              gap: 22,
+              gridTemplateColumns: isMobile ? '1fr' : '1.15fr .85fr',
+              alignItems: 'start',
+            }}
+          >
+            {!isMobile ? (
+              <div>
+                <h1
+                  style={{
+                    margin: 0,
+                    fontSize: 46,
+                    lineHeight: 1.02,
+                    fontWeight: 800,
+                    maxWidth: 660,
+                  }}
+                >
+                  Aparta mercancía y desbloquea mejor precio por volumen.
+                </h1>
+              </div>
+            ) : null}
+
+            <div style={{ ...styles.card, padding: isMobile ? 18 : 22, display: 'grid', gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                <div>
+                  <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Nivel actual</p>
+                  <h2 style={{ margin: '5px 0 0', fontSize: isMobile ? 26 : 34 }}>
+                    {specialClientSession?.active ? `Cliente ${specialClientSession.client_tier}` : 'Precio normal'}
+                  </h2>
+                </div>
+
+                <div
+                  style={{
+                    background: '#f3f4f6',
+                    borderRadius: 16,
+                    padding: '10px 14px',
+                    minWidth: 78,
+                    textAlign: 'center',
+                  }}
+                >
+                  <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>Piezas</p>
+                  <p style={{ margin: '4px 0 0', fontWeight: 800, fontSize: 24 }}>{totalPieces}</p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
+                <div style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16 }}>
+                  <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Subtotal estimado</p>
+                  <p style={{ margin: '6px 0 0', fontWeight: 800, fontSize: 22 }}>{mxn(subtotalPreview)}</p>
+                </div>
+
+                <div style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16 }}>
+                  <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Venta</p>
+                  <p style={{ margin: '6px 0 0', fontWeight: 700 }}>Piezas mixtas</p>
+                  <p style={{ margin: '8px 0 0', color: '#d97706', fontSize: 14 }}>
+                    {specialClientSession?.active
+                      ? 'Tu sesión de cliente ya está activa y se aplican tus precios especiales.'
+                      : totalPieces < 3
+                        ? `Agrega ${3 - totalPieces} pieza${3 - totalPieces > 1 ? 's' : ''} más para precio de 3+ piezas.`
+                        : totalPieces < 10
+                          ? `Ya activaste 3+ piezas. Agrega ${10 - totalPieces} más para llegar al mejor precio.`
+                          : 'Ya tienes el mejor precio por volumen de 10+ piezas.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section style={{ paddingBottom: 18 }}>
+        <div style={styles.container}>
+          <div
+            style={{
+              display: 'grid',
+              gap: 14,
+              gridTemplateColumns: isMobile ? '1fr' : '1.25fr .9fr .9fr',
+              alignItems: 'center',
+            }}
+          >
+            <div style={{ position: 'relative' }}>
+              <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
+              <input
+                style={{ ...styles.input, paddingLeft: 36 }}
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Buscar producto"
+              />
+            </div>
+
+            <select
+              style={styles.input}
+              value={storeCategory}
+              onChange={(e) => {
+                setStoreCategory(e.target.value)
+                setStoreFit('Todos')
+              }}
+            >
+              <option value="Todos">Todos los productos</option>
+              {visibleCategories.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+
+            <select
+              style={styles.input}
+              value={storeBrand}
+              onChange={(e) => setStoreBrand(e.target.value)}
+            >
+              <option value="Todas">Todas las marcas</option>
+              {visibleBrands.map((brand) => (
+                <option key={brand} value={brand}>{brand}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <section style={{ paddingBottom: 42 }}>
+        <div style={styles.container}>
+          {filteredProducts.length === 0 ? (
+            <div style={{ ...styles.card, padding: 30, textAlign: 'center', color: '#6b7280' }}>
+              No encontramos productos con ese filtro.
+            </div>
+          ) : (
+            <div
+              style={{
+                display: 'grid',
+                gap: isMobile ? 12 : 22,
+                gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))',
+                alignItems: 'start',
+              }}
+            >
+              {filteredProducts.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  selectedConfig={selectedConfig}
+                  setSelectedConfig={setSelectedConfig}
+                  onAddToCart={addToCart}
+                  onOpenGallery={(prod) =>
+                    setGallery({
+                      open: true,
+                      product: prod,
+                      imageIndex: 0,
+                    })
+                  }
+                  specialClientSession={specialClientSession}
+                  isMobile={isMobile}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <CartSection
+        isMobile={isMobile}
+        cart={cart}
+        setCart={setCart}
+        customer={customer}
+        setCustomer={setCustomer}
+        sendOrder={sendOrder}
+        specialClientSession={specialClientSession}
+        getCartUnitPrice={getCartUnitPrice}
+      />
+
+      <ProductLightbox
+        open={gallery.open}
+        product={gallery.product}
+        imageIndex={gallery.imageIndex}
+        setImageIndex={(value) =>
+          setGallery((prev) => ({
+            ...prev,
+            imageIndex: typeof value === 'function' ? value(prev.imageIndex) : value,
+          }))
+        }
+        onClose={() => setGallery({ open: false, product: null, imageIndex: 0 })}
+      />
+
+      <LoginClientModal
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        specialCode={specialCode}
+        setSpecialCode={setSpecialCode}
+        loginSpecialClient={loginSpecialClient}
+        specialClientSession={specialClientSession}
+        logoutSpecialClient={logoutSpecialClient}
+      />
+    </>
+  )
+}
+
+function AdminView({
+  products,
+  fetchProducts,
+  loading,
+  setLoading,
+  specialClients,
+  fetchSpecialClients,
+  productTierPrices,
+  fetchTierPrices,
+}) {
+  const isMobile = useIsMobile()
+  const [adminSearch, setAdminSearch] = useState('')
+  const [editingId, setEditingId] = useState(null)
+  const [editingDraft, setEditingDraft] = useState(null)
+  const [newProductDraft, setNewProductDraft] = useState(buildEmptyProduct())
+
+  const filteredProducts = useMemo(() => {
+    if (!adminSearch.trim()) return products
+    const q = adminSearch.toLowerCase()
+    return products.filter((p) =>
+      `${p.name} ${p.category} ${p.subcategory} ${p.brand} ${p.audience}`.toLowerCase().includes(q)
+    )
+  }, [products, adminSearch])
+
+  const stats = useMemo(() => {
+    return {
+      total: products.length,
+      active: products.filter((p) => p.active).length,
+      stock: products.reduce((sum, p) => sum + Number(p.stock_total || 0), 0),
+    }
+  }, [products])
+
+  const prepareDraftForSave = (draft) => {
+    const finalCategory = draft.customCategory?.trim() || draft.category
+    const finalSubcategory = finalCategory === 'Jeans' ? draft.customSubcategory?.trim() || draft.subcategory : ''
+    const finalBrand = draft.customBrand?.trim() || draft.brand
+    return {
+      ...draft,
+      category: finalCategory,
+      subcategory: finalSubcategory,
+      brand: finalBrand,
+    }
+  }
+
+  const addProduct = async () => {
+    if (!newProductDraft.name.trim()) {
+      alert('Pon nombre al producto')
+      return
+    }
+
+    setLoading(true)
+    const clean = prepareDraftForSave(newProductDraft)
+    const payload = productToDb(clean)
+    const { data, error } = await supabase.from('products').insert([payload]).select()
+    setLoading(false)
+
+    if (error) {
+      alert(`No se pudo crear el producto: ${error.message}`)
+      return
+    }
+
+    const inserted = data?.[0]
+    if (inserted?.id) {
+      for (const tier of CLIENT_TIERS) {
+        await supabase.from('product_customer_prices').insert([
+          {
+            product_id: inserted.id,
+            client_tier: tier,
+            price: Number(clean.special_price || clean.price || 0),
+          },
+        ])
+      }
+      await fetchTierPrices()
+    }
+
+    setNewProductDraft(buildEmptyProduct())
+    await fetchProducts()
+  }
+
+  const startEdit = (product) => {
+    setEditingId(product.id)
+    setEditingDraft({
+      ...product,
+      customCategory: '',
+      customSubcategory: '',
+      customBrand: '',
+    })
+  }
+
+  const saveEdit = async () => {
+    if (!editingDraft?.name?.trim()) {
+      alert('Pon nombre al producto')
+      return
+    }
+
+    setLoading(true)
+    const clean = prepareDraftForSave(editingDraft)
+    const payload = productToDb(clean)
+    const { error } = await supabase.from('products').update(payload).eq('id', editingId)
+    setLoading(false)
+
+    if (error) {
+      alert(`No se pudo actualizar el producto: ${error.message}`)
+      return
+    }
+
+    setEditingId(null)
+    setEditingDraft(null)
+    await fetchProducts()
+  }
+
+  const toggleActive = async (id, next) => {
+    const { error } = await supabase.from('products').update({ active: next }).eq('id', id)
+    if (error) {
+      alert(`No se pudo cambiar el estado: ${error.message}`)
+      return
+    }
+    await fetchProducts()
+  }
+
+  const deleteProduct = async (id) => {
+    const ok = window.confirm('¿Seguro que deseas eliminar este producto?')
+    if (!ok) return
+
+    await supabase.from('product_customer_prices').delete().eq('product_id', id)
+
+    const { error } = await supabase.from('products').delete().eq('id', id)
+    if (error) {
+      alert(`No se pudo eliminar: ${error.message}`)
+      return
+    }
+    await fetchProducts()
+    await fetchTierPrices()
+  }
+
+  return (
+    <section style={{ padding: '28px 0 50px' }}>
+      <div style={styles.container}>
+        <div style={{ display: 'grid', gap: 24, gridTemplateColumns: isMobile ? '1fr' : '.85fr 1.15fr' }}>
+          <div style={{ display: 'grid', gap: 24 }}>
+            <div style={{ ...styles.card, padding: 24 }}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+                <Settings />
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 32 }}>Panel admin</h2>
+                  <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
+                    Administra catálogo, marcas, fit, tallas, stock, clientes y precios por categoría.
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
+                  <p style={{ margin: 0, color: '#6b7280' }}>Productos</p>
+                  <p style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 26 }}>{stats.total}</p>
+                </div>
+                <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
+                  <p style={{ margin: 0, color: '#6b7280' }}>Activos</p>
+                  <p style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 26 }}>{stats.active}</p>
+                </div>
+                <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
+                  <p style={{ margin: 0, color: '#6b7280' }}>Stock</p>
+                  <p style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 26 }}>{stats.stock}</p>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ ...styles.card, padding: 24 }}>
+              <h3 style={{ marginTop: 0, fontSize: 24 }}>Agregar producto</h3>
+              <ProductForm
+                draft={newProductDraft}
+                setDraft={setNewProductDraft}
+                onSave={addProduct}
+                onCancel={() => setNewProductDraft(buildEmptyProduct())}
+                loading={loading}
+                saveLabel="Guardar producto"
+                products={products}
+              />
+            </div>
+          </div>
+
+          <div>
+            <div style={{ ...styles.card, padding: 24 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  gap: 12,
+                  alignItems: 'center',
+                  marginBottom: 18,
+                  flexWrap: 'wrap',
+                }}
+              >
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 26 }}>Productos registrados</h3>
+                </div>
+
+                <div style={{ position: 'relative', width: isMobile ? '100%' : 280 }}>
+                  <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
+                  <input
+                    style={{ ...styles.input, paddingLeft: 36 }}
+                    value={adminSearch}
+                    onChange={(e) => setAdminSearch(e.target.value)}
+                    placeholder="Buscar en admin"
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 16 }}>
+                {filteredProducts.map((product) => (
+                  <div key={product.id} style={{ border: '1px solid #e5e7eb', borderRadius: 22, padding: 16 }}>
+                    {editingId === product.id && editingDraft ? (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+                          <h4 style={{ margin: 0, fontSize: 22 }}>Editando producto</h4>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingId(null)
+                              setEditingDraft(null)
+                            }}
+                            style={styles.buttonSecondary}
+                          >
+                            <X size={16} />
+                          </button>
+                        </div>
+
+                        <ProductForm
+                          draft={editingDraft}
+                          setDraft={setEditingDraft}
+                          onSave={saveEdit}
+                          onCancel={() => {
+                            setEditingId(null)
+                            setEditingDraft(null)
+                          }}
+                          loading={loading}
+                          saveLabel="Guardar cambios"
+                          products={products}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '110px 1fr auto' }}>
+                          <div style={{ borderRadius: 18, overflow: 'hidden', background: '#f3f4f6' }}>
+                            {getCover(product) ? (
+                              <img src={getCover(product)} alt={product.name} style={{ width: '100%', height: 110, objectFit: 'cover' }} />
+                            ) : (
+                              <div style={{ width: '100%', height: 110, display: 'grid', placeItems: 'center' }}>
+                                <ImageIcon size={32} color="#9ca3af" />
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                              <h4 style={{ margin: 0, fontSize: 22 }}>{product.name}</h4>
+                              <Badge>{product.audience}</Badge>
+                              <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
+                              {product.category === 'Jeans' && product.subcategory ? (
+                                <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge>
+                              ) : null}
+                            </div>
+
+                            <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category}</p>
+
+                            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 12 }}>
+                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
+                                <small style={{ color: '#6b7280' }}>Normal</small>
+                                <div style={{ fontWeight: 800 }}>{mxn(product.price)}</div>
+                              </div>
+                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
+                                <small style={{ color: '#6b7280' }}>3+</small>
+                                <div style={{ fontWeight: 800 }}>{mxn(product.price_tier3)}</div>
+                              </div>
+                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
+                                <small style={{ color: '#6b7280' }}>10+</small>
+                                <div style={{ fontWeight: 800 }}>{mxn(product.price_tier10)}</div>
+                              </div>
+                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
+                                <small style={{ color: '#6b7280' }}>Especial base</small>
+                                <div style={{ fontWeight: 800 }}>{mxn(product.special_price)}</div>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: 8 }}>
+                            <button type="button" style={styles.buttonSecondary} onClick={() => startEdit(product)}>
+                              <Pencil size={16} />
+                              Editar
+                            </button>
+
+                            <button type="button" style={styles.buttonSecondary} onClick={() => toggleActive(product.id, !product.active)}>
+                              {product.active ? 'Ocultar' : 'Activar'}
+                            </button>
+
+                            <button type="button" style={styles.buttonSecondary} onClick={() => deleteProduct(product.id)}>
+                              <Trash2 size={16} />
+                              Eliminar
+                            </button>
+                          </div>
+                        </div>
+
+                        <ProductTierPricesEditor
+                          product={product}
+                          priceRows={productTierPrices}
+                          fetchTierPrices={fetchTierPrices}
+                        />
+                      </>
+                    )}
+                  </div>
+                ))}
+
+                {filteredProducts.length === 0 ? (
+                  <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 22, textAlign: 'center', color: '#6b7280' }}>
+                    No hay productos con ese criterio.
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <SpecialClientsAdmin
+              specialClients={specialClients}
+              fetchSpecialClients={fetchSpecialClients}
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function AdminLogin({ loginForm, setLoginForm, loginError, showPassword, setShowPassword, handleLogin }) {
   const isMobile = useIsMobile()
 
@@ -2517,7 +3250,8 @@ export default function App() {
       try {
         const parsed = JSON.parse(specialSaved)
         setSpecialClientSession(parsed)
-      } catch {}
+      } catch {
+      }
     }
   }, [])
 
