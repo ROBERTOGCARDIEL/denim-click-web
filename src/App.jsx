@@ -19,16 +19,47 @@ import {
   Settings,
   QrCode,
   ScanLine,
+  MessageCircle,
+  HelpCircle,
+  Headphones,
+  Facebook,
+  Instagram,
+  Youtube,
+  Music2,
+  ExternalLink,
 } from 'lucide-react'
 import { supabase } from './supabase'
 
 const STORE_NAME = 'Denim Click'
-const STORE_LOGO = '/logo-denim-click.png'
 const ADMIN_USERNAME = 'Denim'
 const ADMIN_PASSWORD = 'Denimzoa2026'
 const ADMIN_SESSION_KEY = 'apartados_admin_session_v2'
 const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v2'
 const WHATSAPP_NUMBER = '525572665573'
+const SUPPORT_WHATSAPP_NUMBER = '525641124995'
+const SOCIAL_LINKS = [
+  {
+    label: 'Facebook',
+    href: 'https://www.facebook.com/profile.php?id=61588550633275',
+    icon: 'facebook',
+  },
+  {
+    label: 'TikTok',
+    href: 'https://www.tiktok.com/@denimclick',
+    icon: 'tiktok',
+  },
+  {
+    label: 'Instagram',
+    href: '',
+    icon: 'instagram',
+  },
+  {
+    label: 'YouTube',
+    href: '',
+    icon: 'youtube',
+  },
+]
+
 
 const AUDIENCES = ['Todo', 'Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta']
 const CLIENT_TIERS = ['Plata', 'Oro', 'Esmeralda', 'Platino', 'Diamante']
@@ -55,23 +86,61 @@ const BRANDS = [
 ]
 
 const DEFAULT_PRICE_BY_CATEGORY = {
-  Jeans: 399,
-  Playeras: 199,
+  Jeans: 699,
+  Playeras: 399,
   Sudaderas: 349,
   Chamarras: 499,
   Shorts: 249,
   Polo: 249,
   Camisas: 299,
-  Suéter: 299,
+  Sueter: 299,
   Accesorios: 149,
 }
+
+const ADMIN_PRICE_PRESETS = {
+  Jeans: {
+    price: 699,
+    price_tier3: 499,
+    price_tier10: 299,
+    special_price: 289,
+  },
+  Playeras: {
+    price: 399,
+    price_tier3: 299,
+    price_tier10: 199,
+    special_price: 185,
+  },
+}
+
+const ORDER_STATUSES = [
+  { value: 'nuevo', label: 'Pedido nuevo', color: '#1d4ed8', bg: '#eff6ff' },
+  { value: 'confirmado_pago', label: 'Confirmado, espera de pago', color: '#92400e', bg: '#fef3c7' },
+  { value: 'incompleto', label: 'Pedido incompleto', color: '#991b1b', bg: '#fef2f2' },
+  { value: 'proceso_envio', label: 'En proceso de envio', color: '#047857', bg: '#ecfdf5' },
+  { value: 'entregado', label: 'Pedido entregado', color: '#374151', bg: '#f3f4f6' },
+  { value: 'cancelado', label: 'Cancelado', color: '#6b7280', bg: '#f3f4f6' },
+]
+
+const ADMIN_TABS = [
+  { key: 'resumen', label: 'Resumen' },
+  { key: 'productos', label: 'Productos' },
+  { key: 'clientes', label: 'Clientes especiales' },
+  { key: 'pedidos', label: 'Pedidos' },
+]
+
 
 const emptyCustomer = {
   name: '',
   phone: '',
   city: '',
-  delivery: 'Entrega en sucursal',
+  delivery: 'sucursal',
   notes: '',
+
+  // NUEVO
+  address: '',
+  receiver: '',
+  receiver_phone: '',
+  reference: '',
 }
 
 const emptySpecialClient = {
@@ -113,8 +182,83 @@ function getAudienceCategories(audience, customCategories = []) {
   return uniqueValues([...(BASE_CATEGORY_MAP[audience] || []), ...customCategories])
 }
 
-function getJeansFits(customFits = []) {
-  return uniqueValues([...JEANS_FITS, ...customFits])
+
+function isKidsAudience(audience) {
+  return String(audience || '').toLowerCase().startsWith('ni')
+}
+
+function getDefaultProductPricing(audience, category, current = {}) {
+  if (isKidsAudience(audience)) {
+    return {
+      price: Number(current.price || 0),
+      price_tier3: Number(current.price_tier3 || 0),
+      price_tier10: Number(current.price_tier10 || 0),
+      special_price: Number(current.special_price || 0),
+    }
+  }
+
+  const preset = ADMIN_PRICE_PRESETS[category]
+  if (preset) return { ...preset }
+
+  const base = Number(DEFAULT_PRICE_BY_CATEGORY[category] || current.price || 0)
+  return {
+    price: base,
+    price_tier3: Number(current.price_tier3 || base),
+    price_tier10: Number(current.price_tier10 || base),
+    special_price: Number(current.special_price || base),
+  }
+}
+
+function getFitsForAudience(products, audience, customFits = []) {
+  const audienceFits = uniqueValues(
+    products
+      .filter((product) => product.category === 'Jeans')
+      .filter((product) => audience === 'Todo' || product.audience === audience)
+      .map((product) => product.subcategory)
+  )
+
+  const baseFits = isKidsAudience(audience)
+    ? audienceFits
+    : audience === 'Dama'
+      ? ['Skinny', 'Slim', 'Straight', 'Baggy', ...audienceFits]
+      : [...JEANS_FITS, ...audienceFits]
+
+  return uniqueValues([...baseFits, ...customFits]).filter(Boolean)
+}
+
+function getOrderStatusMeta(status) {
+  return ORDER_STATUSES.find((item) => item.value === status) || ORDER_STATUSES[0]
+}
+
+function normalizeOrderItems(items) {
+  if (Array.isArray(items)) return items
+  if (typeof items === 'string' && items.trim()) {
+    try {
+      const parsed = JSON.parse(items)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function orderIsArchived(status) {
+  return ['entregado', 'cancelado'].includes(status)
+}
+
+function formatShortDate(value) {
+  if (!value) return '-'
+  try {
+    return new Date(value).toLocaleDateString('es-MX', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return '-'
+  }
 }
 
 function getCover(product) {
@@ -205,20 +349,19 @@ function productToDb(product) {
 }
 
 function buildEmptyProduct() {
+  const pricing = getDefaultProductPricing('Hombre', 'Jeans')
+
   return {
     name: '',
     description: '',
     category: 'Jeans',
     subcategory: 'Straight',
     audience: 'Hombre',
-    brand: 'Levi’s',
+    brand: BRANDS[0] || 'Otras',
     images: [],
     sizes: ['28', '30', '32'],
     stock: { 28: 0, 30: 0, 32: 0 },
-    price: DEFAULT_PRICE_BY_CATEGORY.Jeans,
-    price_tier3: DEFAULT_PRICE_BY_CATEGORY.Jeans,
-    price_tier10: DEFAULT_PRICE_BY_CATEGORY.Jeans,
-    special_price: DEFAULT_PRICE_BY_CATEGORY.Jeans,
+    ...pricing,
     active: true,
     is_new: true,
     is_offer: false,
@@ -323,16 +466,30 @@ const styles = {
 }
 
 function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) {
+  const [zoomed, setZoomed] = useState(false)
+
+  useEffect(() => {
+    if (open) setZoomed(false)
+  }, [open, product?.id, imageIndex])
+
   if (!open || !product) return null
   const images = product.images || []
+
+  const previousImage = () => {
+    setImageIndex((p) => (p - 1 + images.length) % images.length)
+  }
+
+  const nextImage = () => {
+    setImageIndex((p) => (p + 1) % images.length)
+  }
 
   return (
     <div
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,.8)',
-        zIndex: 80,
+        background: 'rgba(0,0,0,.86)',
+        zIndex: 90,
         display: 'grid',
         placeItems: 'center',
         padding: 18,
@@ -341,6 +498,7 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
       <button
         type="button"
         onClick={onClose}
+        aria-label="Cerrar fotos"
         style={{
           position: 'absolute',
           top: 16,
@@ -348,38 +506,67 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
           background: '#fff',
           border: 'none',
           borderRadius: 999,
-          padding: '8px 12px',
+          width: 46,
+          height: 46,
+          display: 'grid',
+          placeItems: 'center',
           cursor: 'pointer',
+          zIndex: 2,
         }}
       >
-        ✕
+        <X size={24} />
       </button>
 
-      <div style={{ width: '100%', maxWidth: 980 }}>
+      <div style={{ width: '100%', maxWidth: 1040 }}>
         <div style={{ color: '#fff', marginBottom: 12, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <strong>{product.name}</strong>
-          <span>{imageIndex + 1} / {images.length}</span>
+          <span>{imageIndex + 1} / {images.length || 1}</span>
         </div>
 
         <div
           style={{
             position: 'relative',
-            borderRadius: 24,
-            overflow: 'hidden',
+            borderRadius: 8,
+            overflow: zoomed ? 'auto' : 'hidden',
             background: 'rgba(255,255,255,.08)',
+            maxHeight: '78vh',
           }}
         >
-          <img
-            src={images[imageIndex]}
-            alt={product.name}
-            style={{ width: '100%', maxHeight: '78vh', objectFit: 'contain' }}
-          />
+          {images[imageIndex] ? (
+            <button
+              type="button"
+              onClick={() => setZoomed((value) => !value)}
+              style={{
+                border: 'none',
+                padding: 0,
+                background: 'transparent',
+                width: zoomed ? '150%' : '100%',
+                cursor: zoomed ? 'zoom-out' : 'zoom-in',
+                transformOrigin: 'center center',
+              }}
+            >
+              <img
+                src={images[imageIndex]}
+                alt={product.name}
+                style={{
+                  width: '100%',
+                  maxHeight: zoomed ? 'none' : '78vh',
+                  objectFit: 'contain',
+                }}
+              />
+            </button>
+          ) : (
+            <div style={{ minHeight: 420, display: 'grid', placeItems: 'center' }}>
+              <ImageIcon size={50} color="#fff" />
+            </div>
+          )}
 
-          {images.length > 1 && (
+          {images.length > 1 && !zoomed ? (
             <>
               <button
                 type="button"
-                onClick={() => setImageIndex((p) => (p - 1 + images.length) % images.length)}
+                aria-label="Foto anterior"
+                onClick={previousImage}
                 style={{
                   position: 'absolute',
                   left: 10,
@@ -389,7 +576,9 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
                   border: 'none',
                   borderRadius: 999,
                   cursor: 'pointer',
-                  padding: '10px 14px',
+                  width: 44,
+                  height: 44,
+                  fontSize: 28,
                 }}
               >
                 ‹
@@ -397,7 +586,8 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
 
               <button
                 type="button"
-                onClick={() => setImageIndex((p) => (p + 1) % images.length)}
+                aria-label="Foto siguiente"
+                onClick={nextImage}
                 style={{
                   position: 'absolute',
                   right: 10,
@@ -407,18 +597,20 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
                   border: 'none',
                   borderRadius: 999,
                   cursor: 'pointer',
-                  padding: '10px 14px',
+                  width: 44,
+                  height: 44,
+                  fontSize: 28,
                 }}
               >
                 ›
               </button>
             </>
-          )}
+          ) : null}
         </div>
 
         {images.length > 1 && (
           <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(6, 1fr)', marginTop: 12 }}>
-            {images.map((img, idx) => (
+            {images.slice(0, 6).map((img, idx) => (
               <button
                 key={idx}
                 type="button"
@@ -426,13 +618,13 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
                 style={{
                   padding: 0,
                   border: idx === imageIndex ? '2px solid #fff' : '1px solid rgba(255,255,255,.25)',
-                  borderRadius: 12,
+                  borderRadius: 8,
                   overflow: 'hidden',
                   background: 'transparent',
                   cursor: 'pointer',
                 }}
               >
-                <img src={img} alt={`${product.name}-${idx}`} style={{ width: '100%', height: 64, objectFit: 'cover' }} />
+                <img src={img} alt={product.name + '-' + idx} style={{ width: '100%', height: 64, objectFit: 'cover' }} />
               </button>
             ))}
           </div>
@@ -579,6 +771,7 @@ function ScannerModal({ open, onClose, onDetected }) {
               }
             }
           } catch {
+            // Some video frames are not ready for barcode detection yet.
           }
 
           frameRef.current = requestAnimationFrame(scan)
@@ -843,7 +1036,7 @@ function DesktopMegaMenu({
       .filter((p) => (activeAudience === 'Todo' ? true : p.audience === activeAudience))
       .map((p) => p.brand),
   ])
-  const fitList = getJeansFits(customFits)
+  const fitList = getFitsForAudience(products, activeAudience, customFits)
 
   return (
     <div
@@ -1029,7 +1222,7 @@ function MobileMenu({
       .filter((p) => (selectedAudience === 'Todo' ? true : p.audience === selectedAudience))
       .map((p) => p.brand),
   ])
-  const fits = getJeansFits(customFits)
+  const fits = getFitsForAudience(products, selectedAudience, customFits)
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 50 }}>
@@ -1045,7 +1238,7 @@ function MobileMenu({
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <img src={STORE_LOGO} alt={STORE_NAME} style={{ width: 110, objectFit: 'contain' }} />
+          <DenimClickLogo variant="light" size="sm" />
           <button
             type="button"
             onClick={close}
@@ -1253,22 +1446,246 @@ function MobileMenu({
     </div>
   )
 }
+function ProductMediaCarousel({
+  product,
+  isMobile,
+  variant = 'card',
+  onOpenGallery,
+  onOpenQuickView,
+}) {
+  const images = Array.isArray(product.images) && product.images.length ? product.images : []
+  const [imageIndex, setImageIndex] = useState(0)
+  const touchStartX = useRef(0)
+  const swipedRef = useRef(false)
+
+  useEffect(() => {
+    setImageIndex(0)
+  }, [product.id])
+
+  const goTo = (nextIndex) => {
+    if (!images.length) return
+    setImageIndex((nextIndex + images.length) % images.length)
+  }
+
+  const openDetail = () => {
+    if (swipedRef.current) {
+      swipedRef.current = false
+      return
+    }
+    if (isMobile) {
+      onOpenQuickView(product)
+      return
+    }
+    onOpenGallery(product, imageIndex)
+  }
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-label={'Ver detalle de ' + product.name}
+      onClick={openDetail}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') openDetail()
+      }}
+      onTouchStart={(event) => {
+        touchStartX.current = event.touches?.[0]?.clientX || 0
+        swipedRef.current = false
+      }}
+      onTouchEnd={(event) => {
+        const endX = event.changedTouches?.[0]?.clientX || touchStartX.current
+        const diff = touchStartX.current - endX
+        if (Math.abs(diff) < 34) return
+        swipedRef.current = true
+        goTo(imageIndex + (diff > 0 ? 1 : -1))
+      }}
+      style={{
+        width: '100%',
+        background: '#ebe6dc',
+        cursor: 'pointer',
+        aspectRatio: variant === 'quick' ? '4 / 5.1' : isMobile ? '4 / 4.9' : '4 / 4.35',
+        position: 'relative',
+        overflow: 'hidden',
+        touchAction: 'pan-y',
+      }}
+    >
+      {images.length ? (
+        <div
+          style={{
+            height: '100%',
+            display: 'flex',
+            transform: 'translateX(-' + imageIndex * 100 + '%)',
+            transition: 'transform .28s ease',
+          }}
+        >
+          {images.map((image, idx) => (
+            <img
+              key={image + idx}
+              src={image}
+              alt={product.name}
+              loading="lazy"
+              decoding="async"
+              style={{
+                width: '100%',
+                height: '100%',
+                flex: '0 0 100%',
+                objectFit: 'cover',
+              }}
+            />
+          ))}
+        </div>
+      ) : (
+        <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}>
+          <ImageIcon size={42} color="#9ca3af" />
+        </div>
+      )}
+
+      {images.length > 1 ? (
+        <div
+          aria-hidden="true"
+          style={{
+            position: 'absolute',
+            left: 12,
+            right: 12,
+            bottom: isMobile ? 12 : 14,
+            display: 'flex',
+            justifyContent: 'center',
+            gap: 6,
+          }}
+        >
+          {images.slice(0, 5).map((_, idx) => (
+            <span
+              key={idx}
+              style={{
+                width: idx === imageIndex ? 18 : 7,
+                height: 7,
+                borderRadius: 999,
+                background: idx === imageIndex ? '#111315' : 'rgba(17,19,21,.28)',
+                transition: 'width .2s ease',
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+
+      {!isMobile && images.length > 1 ? (
+        <>
+          <button
+            type="button"
+            aria-label="Imagen anterior"
+            onClick={(event) => {
+              event.stopPropagation()
+              goTo(imageIndex - 1)
+            }}
+            style={{
+              position: 'absolute',
+              left: 10,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: 38,
+              height: 38,
+              borderRadius: 999,
+              border: 'none',
+              background: 'rgba(255,255,255,.9)',
+              cursor: 'pointer',
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: 24,
+            }}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            aria-label="Imagen siguiente"
+            onClick={(event) => {
+              event.stopPropagation()
+              goTo(imageIndex + 1)
+            }}
+            style={{
+              position: 'absolute',
+              right: 10,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              width: 38,
+              height: 38,
+              borderRadius: 999,
+              border: 'none',
+              background: 'rgba(255,255,255,.9)',
+              cursor: 'pointer',
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: 24,
+            }}
+          >
+            ›
+          </button>
+        </>
+      ) : null}
+
+      {isMobile && variant === 'card' ? (
+        <button
+          type="button"
+          aria-label={'Agregar rapido ' + product.name}
+          onClick={(event) => {
+            event.stopPropagation()
+            onOpenQuickView(product)
+          }}
+          style={{
+            position: 'absolute',
+            right: 10,
+            top: 10,
+            width: 42,
+            height: 42,
+            borderRadius: 999,
+            border: '1px solid rgba(17,19,21,.12)',
+            background: 'rgba(255,255,255,.94)',
+            display: 'grid',
+            placeItems: 'center',
+            cursor: 'pointer',
+            boxShadow: '0 10px 26px rgba(17,19,21,.14)',
+          }}
+        >
+          <ShoppingBag size={20} />
+        </button>
+      ) : null}
+
+      {!isMobile && variant === 'card' ? (
+        <span
+          style={{
+            position: 'absolute',
+            right: 10,
+            bottom: 10,
+            borderRadius: 999,
+            padding: '7px 10px',
+            background: 'rgba(255,255,255,.92)',
+            color: '#111315',
+            fontWeight: 900,
+            fontSize: 12,
+          }}
+        >
+          Ver detalle
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 function ProductCard({
   product,
   selectedConfig,
   setSelectedConfig,
   onAddToCart,
   onOpenGallery,
+  onOpenQuickView,
   specialClientSession,
   isMobile,
 }) {
-  const current = selectedConfig[product.id] || {
-    size: '',
-    quantity: 0,
-  }
-
+  const current = selectedConfig[product.id] || { size: '', quantity: 0 }
   const activeSize = current.size
   const stockForSelected = Number(product.stock?.[activeSize] || 0)
+  const availableStock = totalStock(product.stock)
+  const displayPrice = specialClientSession?.active && product.special_price ? product.special_price : product.price
 
   const setSize = (size) => {
     const available = Number(product.stock?.[size] || 0)
@@ -1294,163 +1711,535 @@ function ProductCard({
   }
 
   return (
-    <div style={{ ...styles.card, overflow: 'hidden', borderRadius: 22 }}>
-      <button
-        type="button"
-        onClick={() => onOpenGallery(product)}
-        style={{
-          width: '100%',
-          border: 'none',
-          background: '#f3f4f6',
-          padding: 0,
-          cursor: 'pointer',
-          aspectRatio: isMobile ? '4 / 4.7' : '4 / 4.35',
-        }}
-      >
-        {getCover(product) ? (
-          <img src={getCover(product)} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-        ) : (
-          <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}>
-            <ImageIcon size={42} color="#9ca3af" />
-          </div>
-        )}
-      </button>
+    <article
+      style={{
+        ...styles.card,
+        overflow: 'hidden',
+        borderRadius: isMobile ? 0 : 8,
+        boxShadow: isMobile ? 'none' : styles.card.boxShadow,
+        border: isMobile ? 'none' : styles.card.border,
+        background: '#fff',
+        transition: 'transform 0.25s ease, box-shadow 0.25s ease',
+      }}
+      onMouseEnter={(event) => {
+        if (isMobile) return
+        event.currentTarget.style.transform = 'translateY(-6px)'
+        event.currentTarget.style.boxShadow = '0 24px 50px rgba(17,19,21,0.12)'
+      }}
+      onMouseLeave={(event) => {
+        if (isMobile) return
+        event.currentTarget.style.transform = 'translateY(0px)'
+        event.currentTarget.style.boxShadow = styles.card.boxShadow
+      }}
+    >
+      <ProductMediaCarousel
+        product={product}
+        isMobile={isMobile}
+        onOpenGallery={onOpenGallery}
+        onOpenQuickView={onOpenQuickView}
+      />
 
-      <div style={{ padding: isMobile ? 12 : 18 }}>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-          <Badge>{product.audience}</Badge>
-          <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
-          {product.is_new ? <Badge bg="#0ea5e9" color="#fff">Nuevo</Badge> : null}
-          {product.sales_count > 0 ? <Badge bg="#f59e0b" color="#fff">Más vendido</Badge> : null}
-        </div>
-
-        <h4 style={{ margin: 0, fontSize: isMobile ? 16 : 22, lineHeight: 1.15 }}>{product.name}</h4>
-        <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: isMobile ? 13 : 16 }}>{product.category}</p>
-        <p style={{ margin: '8px 0 0', color: '#6b7280', minHeight: isMobile ? 36 : 48, fontSize: isMobile ? 13 : 16 }}>
-          {product.description || 'Sin descripción'}
-        </p>
-
-        <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-          {!specialClientSession?.active ? (
-            <div
-              style={{
-                display: 'grid',
-                gap: 6,
-                gridTemplateColumns: 'repeat(3, 1fr)',
-              }}
+      <div style={{ padding: isMobile ? '11px 0 18px' : 18 }}>
+        {!isMobile ? (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+            <Badge>{product.audience}</Badge>
+            <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
+            {product.is_new ? <Badge bg="#111315" color="#fff">Nuevo</Badge> : null}
+            {product.sales_count > 0 ? <Badge bg="#b7791f" color="#fff">Mas vendido</Badge> : null}
+            <Badge
+              bg={availableStock > 0 ? '#ecfdf5' : '#fef2f2'}
+              color={availableStock > 0 ? '#065f46' : '#991b1b'}
             >
-              <div style={{ background: '#f8fafc', borderRadius: 12, padding: 8, border: '1px solid #e5e7eb' }}>
-                <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 700 }}>NORMAL</div>
-                <div style={{ fontWeight: 800, fontSize: isMobile ? 12 : 14 }}>{mxn(product.price)}</div>
-              </div>
-
-              <div style={{ background: '#eff6ff', borderRadius: 12, padding: 8, border: '1px solid #bfdbfe' }}>
-                <div style={{ fontSize: 10, color: '#1d4ed8', fontWeight: 700 }}>3+ PZ</div>
-                <div style={{ fontWeight: 800, fontSize: isMobile ? 12 : 14 }}>{mxn(product.price_tier3)}</div>
-              </div>
-
-              <div style={{ background: '#ecfdf5', borderRadius: 12, padding: 8, border: '1px solid #a7f3d0' }}>
-                <div style={{ fontSize: 10, color: '#047857', fontWeight: 700 }}>10+ PZ</div>
-                <div style={{ fontWeight: 800, fontSize: isMobile ? 12 : 14 }}>{mxn(product.price_tier10)}</div>
-              </div>
-            </div>
-          ) : (
-            <div
-              style={{
-                background: '#ecfdf5',
-                border: '1px solid #a7f3d0',
-                borderRadius: 12,
-                padding: 10,
-                fontSize: 13,
-                color: '#065f46',
-                fontWeight: 700,
-              }}
-            >
-              Precio especial activo para cliente {specialClientSession.client_tier}
-            </div>
-          )}
-        </div>
-
-        <div style={{ marginTop: 10 }}>
-          <p style={{ margin: '0 0 8px', fontSize: 12, color: '#6b7280', fontWeight: 700 }}>Tallas</p>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {(product.sizes || []).map((size) => {
-              const qty = Number(product.stock?.[size] || 0)
-              const selected = activeSize === size
-              return (
-                <button
-                  key={size}
-                  type="button"
-                  onClick={() => qty > 0 && setSize(size)}
-                  style={{
-                    border: selected ? '2px solid #0f172a' : '1px solid #d1d5db',
-                    borderRadius: 12,
-                    background: qty > 0 ? '#fff' : '#f3f4f6',
-                    padding: isMobile ? '6px 7px' : '8px 10px',
-                    minWidth: isMobile ? 42 : 54,
-                    cursor: qty > 0 ? 'pointer' : 'not-allowed',
-                    opacity: qty > 0 ? 1 : 0.6,
-                    fontSize: isMobile ? 11 : 13,
-                  }}
-                >
-                  <div style={{ fontWeight: 700 }}>{size}</div>
-                  <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{qty} pz</div>
-                </button>
-              )
-            })}
-          </div>
-        </div>
-
-        {activeSize ? (
-          <div style={{ marginTop: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <button type="button" onClick={() => setQuantity((current.quantity || 0) - 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}>
-                <Minus size={14} />
-              </button>
-
-              <input
-                type="number"
-                min="0"
-                max={stockForSelected}
-                value={current.quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                style={{ ...styles.input, width: isMobile ? 58 : 86, textAlign: 'center', padding: isMobile ? '8px 6px' : '12px 14px' }}
-              />
-
-              <button type="button" onClick={() => setQuantity((current.quantity || 0) + 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}>
-                <Plus size={14} />
-              </button>
-            </div>
+              {availableStock > 0 ? availableStock + ' disponibles' : 'Agotado'}
+            </Badge>
           </div>
         ) : null}
 
         <button
           type="button"
-          onClick={() => onAddToCart(product)}
-          disabled={!activeSize || Number(current.quantity || 0) <= 0}
+          onClick={() => onOpenQuickView(product)}
           style={{
-            ...styles.buttonPrimary,
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            textAlign: 'left',
+            cursor: 'pointer',
             width: '100%',
-            marginTop: 12,
-            opacity: !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
-            padding: isMobile ? '10px 12px' : '12px 18px',
-            fontSize: isMobile ? 13 : 15,
           }}
         >
-          Agregar producto
+          <h4 style={{ margin: 0, fontSize: isMobile ? 15 : 22, lineHeight: 1.18, fontWeight: 850 }}>
+            {product.name}
+          </h4>
         </button>
+
+        <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: isMobile ? 12 : 16 }}>
+          {product.brand} · {product.category}{product.subcategory ? ' · ' + product.subcategory : ''}
+        </p>
+
+        <p style={{ margin: '8px 0 0', fontSize: isMobile ? 15 : 20, fontWeight: 900 }}>
+          {mxn(displayPrice)}
+          {!specialClientSession?.active && product.price_tier3 < product.price ? (
+            <span style={{ color: '#9a6b16', fontSize: isMobile ? 12 : 14, marginLeft: 8 }}>
+              mayoreo desde {mxn(product.price_tier3)}
+            </span>
+          ) : null}
+        </p>
+
+        {isMobile ? (
+          <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+            <p style={{ margin: 0, color: '#6b7280', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>
+              Tallas disponibles
+            </p>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {(product.sizes || []).slice(0, 6).map((size) => {
+                const qty = Number(product.stock?.[size] || 0)
+                return (
+                  <span
+                    key={size}
+                    style={{
+                      border: '1px solid ' + (qty > 0 ? '#d1d5db' : '#e5e7eb'),
+                      color: qty > 0 ? '#111315' : '#9ca3af',
+                      background: qty > 0 ? '#fff' : '#f3f4f6',
+                      borderRadius: 999,
+                      padding: '4px 7px',
+                      fontSize: 11,
+                      fontWeight: 800,
+                    }}
+                  >
+                    {size} · {qty}
+                  </span>
+                )
+              })}
+            </div>
+          </div>
+        ) : (
+          <>
+            <p style={{ margin: '8px 0 0', color: '#6b7280', minHeight: 48, fontSize: 16 }}>
+              {product.description || 'Sin descripcion'}
+            </p>
+
+            <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+              {!specialClientSession?.active ? (
+                <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                  <div style={{ background: '#f8fafc', borderRadius: 12, padding: 8, border: '1px solid #e5e7eb' }}>
+                    <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 700 }}>NORMAL</div>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(product.price)}</div>
+                  </div>
+                  <div style={{ background: '#eff6ff', borderRadius: 12, padding: 8, border: '1px solid #bfdbfe' }}>
+                    <div style={{ fontSize: 10, color: '#1d4ed8', fontWeight: 700 }}>3+ PZ</div>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(product.price_tier3)}</div>
+                  </div>
+                  <div style={{ background: '#ecfdf5', borderRadius: 12, padding: 8, border: '1px solid #a7f3d0' }}>
+                    <div style={{ fontSize: 10, color: '#047857', fontWeight: 700 }}>10+ PZ</div>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(product.price_tier10)}</div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 12, padding: 10, fontSize: 13, color: '#065f46', fontWeight: 700 }}>
+                  Precio especial activo para cliente {specialClientSession.client_tier}
+                </div>
+              )}
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#6b7280', fontWeight: 700 }}>Tallas</p>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {(product.sizes || []).map((size) => {
+                  const qty = Number(product.stock?.[size] || 0)
+                  const selected = activeSize === size
+                  return (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => qty > 0 && setSize(size)}
+                      disabled={qty <= 0}
+                      style={{
+                        border: selected ? '2px solid #0f172a' : '1px solid #d1d5db',
+                        borderRadius: 12,
+                        background: qty > 0 ? '#fff' : '#f3f4f6',
+                        padding: '8px 10px',
+                        minWidth: 54,
+                        cursor: qty > 0 ? 'pointer' : 'not-allowed',
+                        opacity: qty > 0 ? 1 : 0.6,
+                        fontSize: 13,
+                      }}
+                    >
+                      <div style={{ fontWeight: 700 }}>{size}</div>
+                      <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{qty} pz</div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            {activeSize ? (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => setQuantity((current.quantity || 0) - 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}>
+                    <Minus size={14} />
+                  </button>
+                  <input
+                    type="number"
+                    min="0"
+                    max={stockForSelected}
+                    value={current.quantity}
+                    onChange={(event) => setQuantity(event.target.value)}
+                    style={{ ...styles.input, width: 86, textAlign: 'center', padding: '12px 14px' }}
+                  />
+                  <button type="button" onClick={() => setQuantity((current.quantity || 0) + 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}>
+                    <Plus size={14} />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={() => onAddToCart(product)}
+              disabled={!activeSize || Number(current.quantity || 0) <= 0}
+              style={{
+                ...styles.buttonPrimary,
+                width: '100%',
+                marginTop: 12,
+                opacity: !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
+                cursor: !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer',
+                fontSize: 15,
+              }}
+            >
+              Agregar producto
+            </button>
+          </>
+        )}
       </div>
+    </article>
+  )
+}
+
+function ProductQuickView({
+  open,
+  product,
+  isMobile,
+  selectedConfig,
+  setSelectedConfig,
+  onAddToCart,
+  onClose,
+  onOpenGallery,
+  specialClientSession,
+}) {
+  const [imageIndex, setImageIndex] = useState(0)
+  const touchStartX = useRef(0)
+  const images = product?.images || []
+  const current = product ? selectedConfig[product.id] || { size: '', quantity: 0 } : { size: '', quantity: 0 }
+  const activeSize = current.size
+  const stockForSelected = product ? Number(product.stock?.[activeSize] || 0) : 0
+  const availableStock = product ? totalStock(product.stock) : 0
+  const displayPrice = product ? (specialClientSession?.active && product.special_price ? product.special_price : product.price) : 0
+
+  useEffect(() => {
+    if (!open || !product) return
+    setImageIndex(0)
+    const firstAvailable = (product.sizes || []).find((size) => Number(product.stock?.[size] || 0) > 0)
+    const existing = selectedConfig[product.id]
+    if (!existing?.size || Number(product.stock?.[existing.size] || 0) <= 0) {
+      setSelectedConfig((prev) => ({
+        ...prev,
+        [product.id]: {
+          size: firstAvailable || '',
+          quantity: firstAvailable ? 1 : 0,
+        },
+      }))
+    }
+  }, [open, product, selectedConfig, setSelectedConfig])
+
+  if (!open || !product) return null
+
+  const goTo = (nextIndex) => {
+    if (!images.length) return
+    setImageIndex((nextIndex + images.length) % images.length)
+  }
+
+  const setSize = (size) => {
+    const available = Number(product.stock?.[size] || 0)
+    setSelectedConfig((prev) => ({
+      ...prev,
+      [product.id]: {
+        size,
+        quantity: available > 0 ? Math.min(prev[product.id]?.quantity || 1, available) : 0,
+      },
+    }))
+  }
+
+  const setQuantity = (qty) => {
+    const available = Number(product.stock?.[activeSize] || 0)
+    const clean = Math.max(0, Math.min(Number(qty || 0), available))
+    setSelectedConfig((prev) => ({
+      ...prev,
+      [product.id]: {
+        size: activeSize,
+        quantity: clean,
+      },
+    }))
+  }
+
+  const addAndClose = () => {
+    const added = onAddToCart(product)
+    if (added !== false) onClose()
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 75,
+        background: 'rgba(17,19,21,.46)',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: isMobile ? 'flex-end' : 'center',
+        padding: isMobile ? 0 : 24,
+      }}
+      onClick={onClose}
+    >
+      <section
+        aria-label="Detalle rapido de producto"
+        onClick={(event) => event.stopPropagation()}
+        style={{
+          width: isMobile ? '100%' : 'min(1120px, 96vw)',
+          maxHeight: isMobile ? '94vh' : '92vh',
+          background: '#fff',
+          borderRadius: isMobile ? '28px 28px 0 0' : 8,
+          overflow: 'hidden',
+          display: 'grid',
+          gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.06fr) minmax(360px, .94fr)',
+          boxShadow: '0 30px 90px rgba(17,19,21,.28)',
+        }}
+      >
+        <div
+          style={{
+            position: 'relative',
+            background: '#eeeae2',
+            minHeight: isMobile ? 360 : 620,
+            overflow: 'hidden',
+            touchAction: 'pan-y',
+          }}
+          onTouchStart={(event) => {
+            touchStartX.current = event.touches?.[0]?.clientX || 0
+          }}
+          onTouchEnd={(event) => {
+            const endX = event.changedTouches?.[0]?.clientX || touchStartX.current
+            const diff = touchStartX.current - endX
+            if (Math.abs(diff) > 34) goTo(imageIndex + (diff > 0 ? 1 : -1))
+          }}
+        >
+          {images.length ? (
+            <div style={{ height: '100%', display: 'flex', transform: 'translateX(-' + imageIndex * 100 + '%)', transition: 'transform .28s ease' }}>
+              {images.map((image, idx) => (
+                <button
+                  key={image + idx}
+                  type="button"
+                  onClick={() => onOpenGallery(product, imageIndex)}
+                  style={{ width: '100%', height: '100%', flex: '0 0 100%', border: 'none', padding: 0, background: 'transparent', cursor: 'zoom-in' }}
+                >
+                  <img src={image} alt={product.name} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{ height: '100%', display: 'grid', placeItems: 'center' }}>
+              <ImageIcon size={52} color="#9ca3af" />
+            </div>
+          )}
+
+          <button
+            type="button"
+            aria-label="Cerrar detalle"
+            onClick={onClose}
+            style={{
+              position: 'absolute',
+              top: 14,
+              right: 14,
+              width: 46,
+              height: 46,
+              borderRadius: 999,
+              border: 'none',
+              background: 'rgba(255,255,255,.94)',
+              display: 'grid',
+              placeItems: 'center',
+              cursor: 'pointer',
+              boxShadow: '0 10px 28px rgba(17,19,21,.16)',
+            }}
+          >
+            <X size={24} />
+          </button>
+
+          {images.length > 1 ? (
+            <>
+              {!isMobile ? (
+                <>
+                  <button type="button" aria-label="Imagen anterior" onClick={() => goTo(imageIndex - 1)} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'rgba(255,255,255,.9)', width: 44, height: 44, borderRadius: 999, cursor: 'pointer', fontSize: 28 }}>‹</button>
+                  <button type="button" aria-label="Imagen siguiente" onClick={() => goTo(imageIndex + 1)} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'rgba(255,255,255,.9)', width: 44, height: 44, borderRadius: 999, cursor: 'pointer', fontSize: 28 }}>›</button>
+                </>
+              ) : null}
+              <div style={{ position: 'absolute', left: 16, right: 16, bottom: 16, display: 'flex', justifyContent: 'center', gap: 8 }}>
+                {images.slice(0, 6).map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    aria-label={'Ver imagen ' + (idx + 1)}
+                    onClick={() => setImageIndex(idx)}
+                    style={{ width: idx === imageIndex ? 22 : 9, height: 9, borderRadius: 999, border: '1px solid rgba(255,255,255,.8)', background: idx === imageIndex ? '#111315' : 'rgba(255,255,255,.75)', cursor: 'pointer' }}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        <div style={{ padding: isMobile ? '22px 18px 18px' : 34, overflowY: 'auto', display: 'grid', gap: 18 }}>
+          <div>
+            <p style={{ margin: 0, color: '#9a6b16', fontSize: 12, fontWeight: 900, textTransform: 'uppercase' }}>
+              {product.brand} · {product.category}
+            </p>
+            <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 30 : 38, lineHeight: 1.02 }}>
+              {product.name}
+            </h2>
+            <p style={{ margin: '8px 0 0', color: '#6b7280', fontWeight: 700 }}>
+              Modelo/Fit: {product.subcategory || product.category}
+            </p>
+            <p style={{ margin: '14px 0 0', fontSize: 28, fontWeight: 950 }}>
+              {mxn(displayPrice)}
+              {!specialClientSession?.active && product.price_tier3 < product.price ? (
+                <span style={{ display: 'block', color: '#9a6b16', fontSize: 14, marginTop: 4 }}>
+                  Compra 3+ piezas desde {mxn(product.price_tier3)}
+                </span>
+              ) : null}
+            </p>
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+              <p style={{ margin: 0, fontWeight: 900 }}>Seleccionar talla</p>
+              <span style={{ color: availableStock > 0 ? '#047857' : '#991b1b', fontSize: 13, fontWeight: 900 }}>
+                {availableStock > 0 ? availableStock + ' piezas disponibles' : 'Agotado'}
+              </span>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+              {(product.sizes || []).map((size) => {
+                const qty = Number(product.stock?.[size] || 0)
+                const selected = activeSize === size
+                return (
+                  <button
+                    key={size}
+                    type="button"
+                    onClick={() => qty > 0 && setSize(size)}
+                    disabled={qty <= 0}
+                    style={{
+                      minWidth: 72,
+                      border: selected ? '2px solid #111315' : '1px solid #d1d5db',
+                      background: qty > 0 ? '#fff' : '#f3f4f6',
+                      color: qty > 0 ? '#111315' : '#9ca3af',
+                      borderRadius: 8,
+                      padding: '12px 10px',
+                      cursor: qty > 0 ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    <strong>{size}</strong>
+                    <span style={{ display: 'block', color: '#6b7280', fontSize: 11, marginTop: 3 }}>{qty} pz</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div style={{ border: '1px solid #e5dfd4', borderRadius: 8, padding: 14, background: '#fbfaf7' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ShoppingBag size={18} />
+              <p style={{ margin: 0, fontWeight: 950 }}>Compra por paquete</p>
+            </div>
+            <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: 13, lineHeight: 1.45 }}>
+              Elige una talla y arma un paquete rapido. Si no hay stock suficiente, se toma el maximo disponible.
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8, marginTop: 12 }}>
+              {[
+                { label: 'Paquete 3 pz', pieces: 3, price: product.price_tier3 },
+                { label: 'Paquete 10 pz', pieces: 10, price: product.special_price || product.price_tier10 },
+              ].map((option) => {
+                const disabled = !activeSize || stockForSelected <= 0
+                const targetPieces = Math.min(option.pieces, stockForSelected)
+
+                return (
+                  <button
+                    key={option.label}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => setQuantity(targetPieces)}
+                    style={{
+                      border: '1px solid #d8d3c8',
+                      background: disabled ? '#f3f4f6' : '#fff',
+                      color: disabled ? '#9ca3af' : '#111315',
+                      borderRadius: 8,
+                      padding: '12px 10px',
+                      textAlign: 'left',
+                      cursor: disabled ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    <strong>{option.label}</strong>
+                    <span style={{ display: 'block', marginTop: 4, color: disabled ? '#9ca3af' : '#9a6b16', fontSize: 12, fontWeight: 900 }}>
+                      Desde {mxn(option.price)} c/u
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p style={{ margin: '0 0 10px', fontWeight: 900 }}>Cantidad</p>
+            <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
+              <button type="button" onClick={() => setQuantity((current.quantity || 0) - 1)} style={{ border: 'none', background: '#fff', width: 46, height: 42, cursor: 'pointer' }}>
+                <Minus size={17} />
+              </button>
+              <input type="number" min="0" max={stockForSelected} value={current.quantity} onChange={(event) => setQuantity(event.target.value)} style={{ width: 58, height: 42, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900 }} />
+              <button type="button" onClick={() => setQuantity((current.quantity || 0) + 1)} style={{ border: 'none', background: '#fff', width: 46, height: 42, cursor: 'pointer' }}>
+                <Plus size={17} />
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={addAndClose}
+            disabled={!activeSize || Number(current.quantity || 0) <= 0}
+            style={{ ...styles.buttonPrimary, width: '100%', minHeight: 56, borderRadius: 0, opacity: !activeSize || Number(current.quantity || 0) <= 0 ? .52 : 1, cursor: !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer' }}
+          >
+            <ShoppingBag size={18} />
+            Agregar a bolsa
+          </button>
+
+          <div style={{ borderTop: '1px solid #ece6da', paddingTop: 18 }}>
+            <h3 style={{ margin: 0, fontSize: 22 }}>Descripcion</h3>
+            <p style={{ margin: '10px 0 0', color: '#374151', lineHeight: 1.7 }}>
+              {product.description || 'Prenda seleccionada para apartado. Revisa talla, disponibilidad y precio antes de agregarla a tu bolsa.'}
+            </p>
+          </div>
+        </div>
+      </section>
     </div>
   )
 }
 
-function CartSection({
+
+
+function CartDrawer({
+  open,
+  onClose,
   isMobile,
   cart,
   setCart,
   customer,
   setCustomer,
   sendOrder,
+  orderLoading,
   specialClientSession,
   getCartUnitPrice,
 }) {
@@ -1458,10 +2247,47 @@ function CartSection({
 
   const subtotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + getCartUnitPrice(item.product) * Number(item.quantity || 0), 0)
-  }, [cart, specialClientSession, getCartUnitPrice])
+  }, [cart, getCartUnitPrice])
 
-  const missingFor3 = totalPieces < 3 ? 3 - totalPieces : 0
-  const missingFor10 = totalPieces < 10 ? 10 - totalPieces : 0
+  const progress = specialClientSession?.active
+    ? 100
+    : totalPieces >= 10
+      ? 100
+      : totalPieces >= 3
+        ? Math.max(35, Math.round((totalPieces / 10) * 100))
+        : Math.round((totalPieces / 3) * 34)
+
+  const status = specialClientSession?.active
+    ? {
+        title: 'Precio especial activo',
+        text: 'Tu categoría de cliente ya está aplicando precios personalizados.',
+        tone: '#065f46',
+        bg: '#ecfdf5',
+        border: '#a7f3d0',
+      }
+    : totalPieces >= 10
+      ? {
+          title: 'Mayoreo máximo activo',
+          text: 'Ya llevas precio de 10+ piezas en todos los productos elegibles.',
+          tone: '#92400e',
+          bg: '#fef3c7',
+          border: '#fcd34d',
+        }
+      : totalPieces >= 3
+        ? {
+            title: 'Mayoreo 3+ activo',
+            text: 'Te faltan ' + (10 - totalPieces) + ' pieza' + (10 - totalPieces > 1 ? 's' : '') + ' para el mejor precio.',
+            tone: '#047857',
+            bg: '#ecfdf5',
+            border: '#a7f3d0',
+          }
+        : {
+            title: 'Precio normal',
+            text: 'Te faltan ' + (3 - totalPieces) + ' pieza' + (3 - totalPieces > 1 ? 's' : '') + ' para activar mayoreo 3+.',
+            tone: '#1d4ed8',
+            bg: '#eff6ff',
+            border: '#bfdbfe',
+          }
 
   const updateItemQty = (index, nextQty) => {
     setCart((prev) => {
@@ -1479,226 +2305,316 @@ function CartSection({
     setCart((prev) => prev.filter((_, i) => i !== index))
   }
 
-  return (
-    <section style={{ paddingBottom: 54 }}>
-      <div style={styles.container}>
-        <div style={{ display: 'grid', gap: 24, gridTemplateColumns: isMobile ? '1fr' : '1.05fr .95fr' }}>
-          <div style={{ ...styles.card, padding: 24 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: 30 }}>Carrito</h3>
-                <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
-                  Aquí verás tus productos, piezas, precio aplicado y el total final de tu pedido.
-                </p>
-              </div>
+  if (!open) return null
 
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {specialClientSession?.active ? (
-                  <Badge bg="#065f46" color="#fff">Cliente {specialClientSession.client_tier}</Badge>
-                ) : null}
-                <Badge>{totalPieces} pz</Badge>
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 80,
+        background: 'rgba(17,19,21,.42)',
+        display: 'flex',
+        justifyContent: isMobile ? 'center' : 'flex-end',
+        alignItems: isMobile ? 'flex-end' : 'stretch',
+      }}
+      onClick={onClose}
+    >
+      <aside
+        aria-label="Bolsa de apartados"
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: isMobile ? '100%' : 520,
+          maxWidth: '100%',
+          maxHeight: isMobile ? '92vh' : '100vh',
+          background: '#fff',
+          color: '#111315',
+          borderRadius: isMobile ? '28px 28px 0 0' : 0,
+          boxShadow: '-24px 0 70px rgba(17,19,21,.24)',
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            padding: isMobile ? '18px 18px 14px' : '26px 28px 18px',
+            borderBottom: '1px solid #ece6da',
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 14,
+            alignItems: 'center',
+          }}
+        >
+          <div>
+            <p style={{ margin: 0, color: '#9a6b16', fontSize: 12, fontWeight: 900, textTransform: 'uppercase' }}>
+              Denim Click
+            </p>
+            <h2 style={{ margin: '4px 0 0', fontSize: isMobile ? 28 : 34, lineHeight: 1 }}>Bolsa de apartado</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Cerrar bolsa"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 999,
+              border: '1px solid #e5dfd4',
+              background: '#fff',
+              display: 'grid',
+              placeItems: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <X size={22} />
+          </button>
+        </div>
+
+        <div style={{ overflowY: 'auto', padding: isMobile ? 18 : 28, display: 'grid', gap: 18 }}>
+          <div
+            style={{
+              border: '1px solid ' + status.border,
+              background: status.bg,
+              borderRadius: 20,
+              padding: 16,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'start' }}>
+              <div>
+                <p style={{ margin: 0, color: status.tone, fontWeight: 900 }}>{status.title}</p>
+                <p style={{ margin: '6px 0 0', color: '#374151', lineHeight: 1.45 }}>{status.text}</p>
               </div>
+              <Badge bg="#fff" color={status.tone} border={'1px solid ' + status.border}>{totalPieces} pz</Badge>
             </div>
 
-            <div style={{ display: 'grid', gap: 14, marginTop: 18 }}>
-              {cart.length === 0 ? (
-                <div
-                  style={{
-                    border: '1px dashed #d1d5db',
-                    borderRadius: 20,
-                    padding: 26,
-                    textAlign: 'center',
-                    color: '#6b7280',
-                  }}
-                >
-                  Tu carrito está vacío.
-                </div>
-              ) : (
-                cart.map((item, index) => {
+            <div style={{ height: 9, background: 'rgba(255,255,255,.75)', borderRadius: 999, marginTop: 14, overflow: 'hidden' }}>
+              <div style={{ width: progress + '%', height: '100%', background: status.tone, borderRadius: 999 }} />
+            </div>
+
+            {!specialClientSession?.active ? (
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, color: '#6b7280', fontSize: 12, fontWeight: 800 }}>
+                <span>Normal</span>
+                <span>3+ pz</span>
+                <span>10+ pz</span>
+              </div>
+            ) : null}
+          </div>
+
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 22 }}>Tus productos</h3>
+              <Badge bg="#f6f4ef" border="1px solid #e5dfd4">{mxn(subtotal)}</Badge>
+            </div>
+
+            {cart.length === 0 ? (
+              <div style={{ border: '1px dashed #d8d3c8', borderRadius: 22, padding: 26, textAlign: 'center', color: '#6b7280' }}>
+                Tu bolsa está vacía. Agrega productos desde el catálogo.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 14 }}>
+                {cart.map((item, index) => {
                   const unit = getCartUnitPrice(item.product)
                   const lineTotal = unit * Number(item.quantity || 0)
                   const stock = Number(item.product.stock?.[item.size] || 0)
 
                   return (
-                    <div key={`${item.product.id}-${item.size}-${index}`} style={{ border: '1px solid #e5e7eb', borderRadius: 20, padding: 16 }}>
-                      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '84px 1fr auto', alignItems: 'start' }}>
-                        <div style={{ borderRadius: 16, overflow: 'hidden', background: '#f3f4f6' }}>
-                          {getCover(item.product) ? (
-                            <img src={getCover(item.product)} alt={item.product.name} style={{ width: '100%', height: 84, objectFit: 'cover' }} />
-                          ) : (
-                            <div style={{ width: '100%', height: 84, display: 'grid', placeItems: 'center' }}>
-                              <ImageIcon size={28} color="#9ca3af" />
-                            </div>
-                          )}
+                    <article
+                      key={item.product.id + '-' + item.size + '-' + index}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: '92px 1fr',
+                        gap: 14,
+                        borderBottom: '1px solid #f0ebe2',
+                        paddingBottom: 14,
+                      }}
+                    >
+                      <div style={{ borderRadius: 16, overflow: 'hidden', background: '#f3f4f6', aspectRatio: '1 / 1.1' }}>
+                        {getCover(item.product) ? (
+                          <img src={getCover(item.product)} alt={item.product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}>
+                            <ImageIcon size={28} color="#9ca3af" />
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+                          <div>
+                            <h4 style={{ margin: 0, fontSize: 17, lineHeight: 1.2 }}>{item.product.name}</h4>
+                            <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: 14 }}>
+                              {item.product.brand} · {item.product.category}
+                            </p>
+                            <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: 14 }}>Talla {item.size}</p>
+                          </div>
+                          <strong>{mxn(lineTotal)}</strong>
                         </div>
 
-                        <div>
-                          <h4 style={{ margin: 0, fontSize: 20 }}>{item.product.name}</h4>
-                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>{item.product.brand} · {item.product.category}</p>
-                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Talla: {item.size}</p>
-                          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Precio unitario: {mxn(unit)}</p>
-                        </div>
-
-                        <div style={{ display: 'grid', gap: 10 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <button type="button" style={styles.buttonSecondary} onClick={() => updateItemQty(index, item.quantity - 1)}>
-                              <Minus size={16} />
+                        <div style={{ marginTop: 12, display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
+                            <button type="button" aria-label="Quitar pieza" onClick={() => updateItemQty(index, item.quantity - 1)} style={{ border: 'none', background: '#fff', width: 34, height: 34, cursor: 'pointer' }}>
+                              <Minus size={15} />
                             </button>
-
                             <input
+                              aria-label="Cantidad"
                               type="number"
                               min="0"
                               max={stock}
                               value={item.quantity}
                               onChange={(e) => updateItemQty(index, e.target.value)}
-                              style={{ ...styles.input, width: 74, textAlign: 'center' }}
+                              style={{ width: 44, height: 34, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900 }}
                             />
-
-                            <button type="button" style={styles.buttonSecondary} onClick={() => updateItemQty(index, item.quantity + 1)}>
-                              <Plus size={16} />
+                            <button type="button" aria-label="Agregar pieza" onClick={() => updateItemQty(index, item.quantity + 1)} style={{ border: 'none', background: '#fff', width: 34, height: 34, cursor: 'pointer' }}>
+                              <Plus size={15} />
                             </button>
                           </div>
 
-                          <div style={{ fontWeight: 800, textAlign: isMobile ? 'left' : 'right' }}>{mxn(lineTotal)}</div>
-
-                          <button type="button" style={styles.buttonSecondary} onClick={() => removeItem(index)}>
-                            Eliminar
+                          <button
+                            type="button"
+                            onClick={() => removeItem(index)}
+                            style={{
+                              border: 'none',
+                              background: 'transparent',
+                              color: '#6b7280',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              cursor: 'pointer',
+                              fontWeight: 800,
+                            }}
+                          >
+                            <Trash2 size={16} />
+                            Quitar
                           </button>
                         </div>
+
+                        <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: 13 }}>Unitario: {mxn(unit)}</p>
                       </div>
-                    </div>
+                    </article>
                   )
-                })
-              )}
-            </div>
-
-            <div style={{ display: 'grid', gap: 14, gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', marginTop: 18 }}>
-              <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
-                <p style={{ margin: 0, fontSize: 14, color: '#6b7280' }}>Piezas totales</p>
-                <p style={{ margin: '6px 0 0', fontSize: 28, fontWeight: 800 }}>{totalPieces}</p>
+                })}
               </div>
-
-              <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
-                <p style={{ margin: 0, fontSize: 14, color: '#6b7280' }}>Precio aplicado</p>
-                <p style={{ margin: '6px 0 0', fontSize: 20, fontWeight: 800 }}>
-                  {specialClientSession?.active ? `Cliente ${specialClientSession.client_tier}` : 'Público / volumen'}
-                </p>
-              </div>
-
-              <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
-                <p style={{ margin: 0, fontSize: 14, color: '#6b7280' }}>Total a pagar</p>
-                <p style={{ margin: '6px 0 0', fontSize: 28, fontWeight: 800 }}>{mxn(subtotal)}</p>
-              </div>
-            </div>
-
-            {!specialClientSession?.active ? (
-              <div style={{ marginTop: 16, display: 'grid', gap: 10 }}>
-                {totalPieces < 3 ? (
-                  <div
-                    style={{
-                      background: '#eff6ff',
-                      border: '1px solid #bfdbfe',
-                      borderRadius: 18,
-                      padding: 14,
-                      color: '#1d4ed8',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Te faltan {missingFor3} pieza{missingFor3 > 1 ? 's' : ''} para desbloquear precio de 3+ piezas.
-                  </div>
-                ) : totalPieces < 10 ? (
-                  <div
-                    style={{
-                      background: '#ecfdf5',
-                      border: '1px solid #a7f3d0',
-                      borderRadius: 18,
-                      padding: 14,
-                      color: '#047857',
-                      fontWeight: 700,
-                    }}
-                  >
-                    Ya tienes precio de 3+ piezas. Agrega {missingFor10} pieza{missingFor10 > 1 ? 's' : ''} más para desbloquear precio de 10+ piezas.
-                  </div>
-                ) : (
-                  <div
-                    style={{
-                      background: '#fef3c7',
-                      border: '1px solid #fcd34d',
-                      borderRadius: 18,
-                      padding: 14,
-                      color: '#92400e',
-                      fontWeight: 800,
-                    }}
-                  >
-                    Ya desbloqueaste el mejor precio por volumen: 10+ piezas.
-                  </div>
-                )}
-              </div>
-            ) : null}
+            )}
           </div>
 
-          <div style={{ ...styles.card, padding: 24 }}>
-            <h3 style={{ margin: 0, fontSize: 30 }}>Datos del cliente</h3>
-            <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
-              Completa tus datos y envía el pedido por WhatsApp.
-            </p>
+          <div style={{ display: 'grid', gap: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 22 }}>Datos para solicitar</h3>
 
-            <div style={{ display: 'grid', gap: 14, marginTop: 18 }}>
-              <input
-                style={styles.input}
-                placeholder="Nombre del cliente"
-                value={customer.name}
-                onChange={(e) => setCustomer((p) => ({ ...p, name: e.target.value }))}
-              />
+            <input
+              style={styles.input}
+              placeholder="Nombre del cliente"
+              value={customer.name}
+              onChange={(e) => setCustomer((p) => ({ ...p, name: e.target.value }))}
+            />
 
-              <input
-                style={styles.input}
-                placeholder="Teléfono"
-                value={customer.phone}
-                onChange={(e) => setCustomer((p) => ({ ...p, phone: e.target.value }))}
-              />
+            <input
+              style={styles.input}
+              placeholder="Teléfono"
+              value={customer.phone}
+              onChange={(e) => setCustomer((p) => ({ ...p, phone: e.target.value }))}
+            />
 
-              <input
-                style={styles.input}
-                placeholder="Ciudad o estado"
-                value={customer.city}
-                onChange={(e) => setCustomer((p) => ({ ...p, city: e.target.value }))}
-              />
+            <input
+              style={styles.input}
+              placeholder="Ciudad o estado"
+              value={customer.city}
+              onChange={(e) => setCustomer((p) => ({ ...p, city: e.target.value }))}
+            />
 
-              <select
-                style={styles.input}
-                value={customer.delivery}
-                onChange={(e) => setCustomer((p) => ({ ...p, delivery: e.target.value }))}
-              >
-                <option value="Entrega en sucursal">Entrega en sucursal</option>
-                <option value="Envíos">Envíos</option>
-                <option value="Entrega en punto medio">Entrega en punto medio</option>
-              </select>
-
-              <textarea
-                style={styles.textarea}
-                placeholder="Notas o comentarios"
-                value={customer.notes}
-                onChange={(e) => setCustomer((p) => ({ ...p, notes: e.target.value }))}
-              />
-            </div>
-
-            <button
-              type="button"
-              style={{ ...styles.buttonPrimary, width: '100%', marginTop: 18 }}
-              onClick={sendOrder}
-              disabled={cart.length === 0}
+            <select
+              style={styles.input}
+              value={customer.delivery}
+              onChange={(e) => setCustomer((p) => ({ ...p, delivery: e.target.value }))}
             >
-              <ShoppingBag size={18} />
-              Solicitar pedido
-            </button>
+              <option value="sucursal">Entrega en sucursal</option>
+              <option value="envios">Envíos</option>
+              <option value="punto">Entrega en punto medio</option>
+            </select>
+
+            {customer.delivery === 'envios' && (
+              <div style={{ display: 'grid', gap: 12 }}>
+                <input
+                  style={styles.input}
+                  placeholder="Nombre de quien recibe"
+                  value={customer.receiver || ''}
+                  onChange={(e) => setCustomer((p) => ({ ...p, receiver: e.target.value }))}
+                />
+
+                <input
+                  style={styles.input}
+                  placeholder="Teléfono de quien recibe"
+                  value={customer.receiver_phone || ''}
+                  onChange={(e) => setCustomer((p) => ({ ...p, receiver_phone: e.target.value }))}
+                />
+
+                <input
+                  style={styles.input}
+                  placeholder="Dirección completa"
+                  value={customer.address || ''}
+                  onChange={(e) => setCustomer((p) => ({ ...p, address: e.target.value }))}
+                />
+
+                <textarea
+                  style={styles.textarea}
+                  placeholder="Referencia (color de casa, entre calles, etc.)"
+                  value={customer.reference || ''}
+                  onChange={(e) => setCustomer((p) => ({ ...p, reference: e.target.value }))}
+                />
+              </div>
+            )}
+
+            <textarea
+              style={styles.textarea}
+              placeholder="Notas adicionales"
+              value={customer.notes}
+              onChange={(e) => setCustomer((p) => ({ ...p, notes: e.target.value }))}
+            />
           </div>
         </div>
-      </div>
-    </section>
+
+        <div
+          style={{
+            padding: isMobile ? 18 : 24,
+            borderTop: '1px solid #ece6da',
+            background: '#fff',
+          }}
+        >
+          <div style={{ display: 'grid', gap: 10, marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16 }}>
+              <span>Subtotal</span>
+              <strong>{mxn(subtotal)}</strong>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', color: '#6b7280' }}>
+              <span>Piezas</span>
+              <span>{totalPieces}</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            style={{
+              ...styles.buttonPrimary,
+              width: '100%',
+              minHeight: 54,
+              borderRadius: 999,
+              opacity: cart.length === 0 || orderLoading ? .55 : 1,
+              cursor: cart.length === 0 || orderLoading ? 'not-allowed' : 'pointer',
+            }}
+            onClick={sendOrder}
+            disabled={cart.length === 0 || orderLoading}
+          >
+            <ShoppingBag size={18} />
+            {orderLoading ? 'Preparando apartado...' : 'Solicitar apartado por WhatsApp'}
+          </button>
+        </div>
+      </aside>
+    </div>
   )
 }
+
 function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, products }) {
+  const isMobile = useIsMobile()
   const [newSize, setNewSize] = useState('')
 
   const customCategories = uniqueValues(
@@ -1714,8 +2630,33 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
   const customBrands = uniqueValues(products.map((p) => p.brand).filter((b) => b && !BRANDS.includes(b)))
 
   const categories = getAudienceCategories(draft.audience, customCategories).filter((c) => c !== 'Playera')
-  const fits = getJeansFits(customFits)
+  const fits = getFitsForAudience(products, draft.audience, customFits)
   const brands = uniqueValues([...BRANDS, ...customBrands])
+  const hasPreset = !isKidsAudience(draft.audience) && Boolean(ADMIN_PRICE_PRESETS[draft.category])
+
+  const applyAudience = (audience) => {
+    const nextCategory = getAudienceCategories(audience, customCategories).filter((c) => c !== 'Playera')[0] || 'Jeans'
+    const nextFits = getFitsForAudience(products, audience, customFits)
+    const nextPricing = getDefaultProductPricing(audience, nextCategory, draft)
+
+    setDraft((prev) => ({
+      ...prev,
+      audience,
+      category: nextCategory,
+      subcategory: nextCategory === 'Jeans' ? nextFits[0] || prev.subcategory || 'Straight' : '',
+      ...nextPricing,
+    }))
+  }
+
+  const applyCategory = (category) => {
+    const nextPricing = getDefaultProductPricing(draft.audience, category, draft)
+    setDraft((prev) => ({
+      ...prev,
+      category,
+      subcategory: category === 'Jeans' ? getFitsForAudience(products, prev.audience, customFits)[0] || prev.subcategory || 'Straight' : '',
+      ...nextPricing,
+    }))
+  }
 
   const addFiles = (files) => {
     const list = Array.from(files || []).filter((file) => file.type.startsWith('image/'))
@@ -1766,7 +2707,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
 
   return (
     <div style={{ display: 'grid', gap: 16 }}>
-      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr 1fr' }}>
+      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
         <input
           style={styles.input}
           placeholder="Nombre del producto"
@@ -1774,49 +2715,15 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
           onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))}
         />
 
-        <select
-          style={styles.input}
-          value={draft.audience}
-          onChange={(e) => {
-            const audience = e.target.value
-            const nextCategory = getAudienceCategories(audience, customCategories)[0] || 'Jeans'
-            const base = DEFAULT_PRICE_BY_CATEGORY[nextCategory] || 0
-            setDraft((p) => ({
-              ...p,
-              audience,
-              category: nextCategory,
-              subcategory: nextCategory === 'Jeans' ? 'Straight' : '',
-              price: base,
-              price_tier3: base,
-              price_tier10: base,
-              special_price: base,
-            }))
-          }}
-        >
+        <select style={styles.input} value={draft.audience} onChange={(e) => applyAudience(e.target.value)}>
           {AUDIENCES.filter((x) => x !== 'Todo').map((aud) => (
             <option key={aud} value={aud}>{aud}</option>
           ))}
         </select>
       </div>
 
-      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr 1fr' }}>
-        <select
-          style={styles.input}
-          value={draft.category}
-          onChange={(e) => {
-            const category = e.target.value
-            const base = DEFAULT_PRICE_BY_CATEGORY[category] || 0
-            setDraft((p) => ({
-              ...p,
-              category,
-              subcategory: category === 'Jeans' ? 'Straight' : '',
-              price: base,
-              price_tier3: base,
-              price_tier10: base,
-              special_price: base,
-            }))
-          }}
-        >
+      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
+        <select style={styles.input} value={draft.category} onChange={(e) => applyCategory(e.target.value)}>
           {categories.map((cat) => (
             <option key={cat} value={cat}>{cat}</option>
           ))}
@@ -1824,23 +2731,28 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
 
         <input
           style={styles.input}
-          placeholder="O crea una categoría personalizada"
+          placeholder="O crea una categoria personalizada"
           value={draft.customCategory || ''}
           onChange={(e) => setDraft((p) => ({ ...p, customCategory: e.target.value }))}
         />
       </div>
 
       {draft.category === 'Jeans' && (
-        <div style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr 1fr' }}>
-          <select
-            style={styles.input}
-            value={draft.subcategory}
-            onChange={(e) => setDraft((p) => ({ ...p, subcategory: e.target.value }))}
-          >
-            {fits.map((fit) => (
-              <option key={fit} value={fit}>{fit}</option>
-            ))}
-          </select>
+        <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
+          <div>
+            <select
+              style={styles.input}
+              value={draft.subcategory}
+              onChange={(e) => setDraft((p) => ({ ...p, subcategory: e.target.value }))}
+            >
+              {fits.map((fit) => (
+                <option key={fit} value={fit}>{fit}</option>
+              ))}
+            </select>
+            <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: 12 }}>
+              Los fits se muestran por genero segun los productos activos de ese genero.
+            </p>
+          </div>
 
           <input
             style={styles.input}
@@ -1851,7 +2763,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr 1fr' }}>
+      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
         <select
           style={styles.input}
           value={draft.brand}
@@ -1872,40 +2784,52 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
 
       <textarea
         style={styles.textarea}
-        placeholder="Descripción"
+        placeholder="Descripcion"
         value={draft.description}
         onChange={(e) => setDraft((p) => ({ ...p, description: e.target.value }))}
       />
 
-      <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        <input
-          style={styles.input}
-          type="number"
-          placeholder="Precio normal"
-          value={draft.price}
-          onChange={(e) => setDraft((p) => ({ ...p, price: Number(e.target.value) }))}
-        />
-        <input
-          style={styles.input}
-          type="number"
-          placeholder="Precio 3+"
-          value={draft.price_tier3}
-          onChange={(e) => setDraft((p) => ({ ...p, price_tier3: Number(e.target.value) }))}
-        />
-        <input
-          style={styles.input}
-          type="number"
-          placeholder="Precio 10+"
-          value={draft.price_tier10}
-          onChange={(e) => setDraft((p) => ({ ...p, price_tier10: Number(e.target.value) }))}
-        />
-        <input
-          style={styles.input}
-          type="number"
-          placeholder="Precio especial base"
-          value={draft.special_price}
-          onChange={(e) => setDraft((p) => ({ ...p, special_price: Number(e.target.value) }))}
-        />
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16, background: '#fbfaf7' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ margin: 0, fontWeight: 900 }}>Precios</p>
+            <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>
+              {isKidsAudience(draft.audience)
+                ? 'Producto de nino: precios manuales, sin carga automatica.'
+                : hasPreset
+                  ? 'Tarifa cargada automaticamente. Puedes editar cualquier campo.'
+                  : 'Categoria sin preset: edita los precios manualmente.'}
+            </p>
+          </div>
+          {hasPreset ? (
+            <button
+              type="button"
+              style={styles.buttonSecondary}
+              onClick={() => setDraft((p) => ({ ...p, ...getDefaultProductPricing(p.audience, p.category, p) }))}
+            >
+              Restaurar default
+            </button>
+          ) : null}
+        </div>
+
+        <div style={{ display: 'grid', gap: 14, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', marginTop: 14 }}>
+          {[
+            ['1 pieza', 'price'],
+            ['3+ piezas', 'price_tier3'],
+            ['10+ piezas', 'price_tier10'],
+            ['Paquete cerrado', 'special_price'],
+          ].map(([label, key]) => (
+            <label key={key} style={{ display: 'grid', gap: 6, color: '#6b7280', fontWeight: 800, fontSize: 13 }}>
+              {label}
+              <input
+                style={styles.input}
+                type="number"
+                value={draft[key]}
+                onChange={(e) => setDraft((p) => ({ ...p, [key]: Number(e.target.value) }))}
+              />
+            </label>
+          ))}
+        </div>
       </div>
 
       <div
@@ -1925,47 +2849,19 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
       >
         <label style={{ cursor: 'pointer', display: 'block' }}>
           <ImageIcon size={34} color="#9ca3af" />
-          <p style={{ margin: '10px 0 4px', fontWeight: 700 }}>Sube imágenes del producto</p>
-          <p style={{ margin: 0, color: '#6b7280' }}>Puedes arrastrarlas o hacer clic aquí</p>
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            style={{ display: 'none' }}
-            onChange={(e) => addFiles(e.target.files)}
-          />
+          <p style={{ margin: '10px 0 4px', fontWeight: 700 }}>Sube imagenes del producto</p>
+          <p style={{ margin: 0, color: '#6b7280' }}>Puedes arrastrarlas o hacer clic aqui</p>
+          <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => addFiles(e.target.files)} />
         </label>
       </div>
 
       {(draft.images || []).length > 0 && (
         <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(4, 1fr)' }}>
           {draft.images.map((img, index) => (
-            <div
-              key={index}
-              style={{
-                position: 'relative',
-                borderRadius: 14,
-                overflow: 'hidden',
-                border: '1px solid #e5e7eb',
-                background: '#f3f4f6',
-              }}
-            >
-              <img src={img} alt={`img-${index}`} style={{ width: '100%', height: 90, objectFit: 'cover' }} />
-              <button
-                type="button"
-                onClick={() => removeImage(index)}
-                style={{
-                  position: 'absolute',
-                  right: 6,
-                  top: 6,
-                  border: 'none',
-                  borderRadius: 999,
-                  background: '#fff',
-                  cursor: 'pointer',
-                  padding: '2px 8px',
-                }}
-              >
-                ×
+            <div key={index} style={{ position: 'relative', borderRadius: 14, overflow: 'hidden', border: '1px solid #e5e7eb', background: '#f3f4f6' }}>
+              <img src={img} alt={'img-' + index} style={{ width: '100%', height: 90, objectFit: 'cover' }} />
+              <button type="button" onClick={() => removeImage(index)} style={{ position: 'absolute', right: 6, top: 6, border: 'none', borderRadius: 999, background: '#fff', cursor: 'pointer', padding: '2px 8px' }}>
+                X
               </button>
             </div>
           ))}
@@ -1974,45 +2870,21 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
 
       <div style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16 }}>
         <p style={{ marginTop: 0, fontWeight: 700 }}>Tallas</p>
-        <input
-          style={styles.input}
-          value={draft.sizes.join(', ')}
-          onChange={(e) => updateSizesFromText(e.target.value)}
-          placeholder="Ejemplo: 28, 30, 32, 34"
-        />
+        <input style={styles.input} value={draft.sizes.join(', ')} onChange={(e) => updateSizesFromText(e.target.value)} placeholder="Ejemplo: 28, 30, 32, 34" />
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
           {draft.sizes.map((size) => (
-            <div
-              key={size}
-              style={{
-                border: '1px solid #e5e7eb',
-                borderRadius: 999,
-                padding: '6px 12px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-              }}
-            >
+            <div key={size} style={{ border: '1px solid #e5e7eb', borderRadius: 999, padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 8 }}>
               <span>{size}</span>
-              <button
-                type="button"
-                onClick={() => removeSize(size)}
-                style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
-              >
-                ×
+              <button type="button" onClick={() => removeSize(size)} style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}>
+                X
               </button>
             </div>
           ))}
         </div>
 
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-          <input
-            style={styles.input}
-            value={newSize}
-            onChange={(e) => setNewSize(e.target.value)}
-            placeholder="Nueva talla"
-          />
+          <input style={styles.input} value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder="Nueva talla" />
           <button type="button" style={styles.buttonSecondary} onClick={addSize}>
             <Plus size={16} />
             Agregar
@@ -2020,7 +2892,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
         </div>
       </div>
 
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(4, 1fr)' }}>
+      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)' }}>
         {draft.sizes.map((size) => (
           <div key={size} style={{ border: '1px solid #e5e7eb', borderRadius: 16, padding: 12 }}>
             <p style={{ marginTop: 0, fontSize: 14, fontWeight: 700 }}>Stock {size}</p>
@@ -2039,34 +2911,24 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
         ))}
       </div>
 
-      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: '1fr 1fr 1fr' }}>
-        <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={draft.active}
-            onChange={(e) => setDraft((p) => ({ ...p, active: e.target.checked }))}
-          />
-          Activo
-        </label>
-
-        <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={draft.is_new}
-            onChange={(e) => setDraft((p) => ({ ...p, is_new: e.target.checked }))}
-          />
-          Nuevo
-        </label>
-
-        <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <input
-            type="checkbox"
-            checked={draft.is_offer}
-            onChange={(e) => setDraft((p) => ({ ...p, is_offer: e.target.checked }))}
-          />
-          Oferta
-        </label>
+      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr' }}>
+        {[
+          ['Activo', 'active'],
+          ['Nuevo', 'is_new'],
+          ['Oferta visible', 'is_offer'],
+        ].map(([label, key]) => (
+          <label key={key} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <input type="checkbox" checked={draft[key]} onChange={(e) => setDraft((p) => ({ ...p, [key]: e.target.checked }))} />
+            {label}
+          </label>
+        ))}
       </div>
+
+      {draft.is_offer ? (
+        <div style={{ border: '1px solid #fcd34d', borderRadius: 14, padding: 12, background: '#fef3c7', color: '#92400e', fontWeight: 800 }}>
+          El precio de 1 pieza se mostrara como precio de oferta en tienda.
+        </div>
+      ) : null}
 
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <button type="button" style={styles.buttonPrimary} onClick={onSave} disabled={loading}>
@@ -2083,9 +2945,8 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
 }
 
 function ProductTierPricesEditor({ product, priceRows, fetchTierPrices }) {
-  const [draft, setDraft] = useState(
-    Object.fromEntries(CLIENT_TIERS.map((tier) => [tier, 0]))
-  )
+  const isMobile = useIsMobile()
+  const [draft, setDraft] = useState(Object.fromEntries(CLIENT_TIERS.map((tier) => [tier, 0])))
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
@@ -2107,20 +2968,14 @@ function ProductTierPricesEditor({ product, priceRows, fetchTierPrices }) {
         const { error } = await supabase.from('product_customer_prices').update({ price: value }).eq('id', existing.id)
         if (error) {
           setSaving(false)
-          alert(`No se pudo guardar ${tier}: ${error.message}`)
+          alert('No se pudo guardar ' + tier + ': ' + error.message)
           return
         }
       } else {
-        const { error } = await supabase.from('product_customer_prices').insert([
-          {
-            product_id: product.id,
-            client_tier: tier,
-            price: value,
-          },
-        ])
+        const { error } = await supabase.from('product_customer_prices').insert([{ product_id: product.id, client_tier: tier, price: value }])
         if (error) {
           setSaving(false)
-          alert(`No se pudo crear ${tier}: ${error.message}`)
+          alert('No se pudo crear ' + tier + ': ' + error.message)
           return
         }
       }
@@ -2128,31 +2983,26 @@ function ProductTierPricesEditor({ product, priceRows, fetchTierPrices }) {
 
     setSaving(false)
     await fetchTierPrices()
-    alert('Precios por categoría guardados.')
+    alert('Precios por categoria guardados.')
   }
 
   return (
     <div style={{ marginTop: 16, borderTop: '1px solid #e5e7eb', paddingTop: 16 }}>
-      <p style={{ marginTop: 0, fontWeight: 800, fontSize: 18 }}>Precios por categoría de cliente</p>
+      <p style={{ marginTop: 0, fontWeight: 900, fontSize: 18 }}>Tarifas para clientes especiales</p>
 
-      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(5, 1fr)' }}>
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)' }}>
         {CLIENT_TIERS.map((tier) => (
-          <div key={tier} style={{ background: '#f8fafc', borderRadius: 16, padding: 12 }}>
-            <p style={{ marginTop: 0, fontWeight: 700, fontSize: 14 }}>{tier}</p>
-            <input
-              type="number"
-              style={styles.input}
-              value={draft[tier]}
-              onChange={(e) => setDraft((p) => ({ ...p, [tier]: Number(e.target.value) }))}
-            />
-          </div>
+          <label key={tier} style={{ background: '#f8fafc', borderRadius: 14, padding: 12, display: 'grid', gap: 8, fontWeight: 800 }}>
+            {tier}
+            <input type="number" style={styles.input} value={draft[tier]} onChange={(e) => setDraft((p) => ({ ...p, [tier]: Number(e.target.value) }))} />
+          </label>
         ))}
       </div>
 
       <div style={{ marginTop: 12 }}>
         <button type="button" style={styles.buttonPrimary} onClick={savePrices} disabled={saving}>
           <Save size={16} />
-          {saving ? 'Guardando...' : 'Guardar precios por categoría'}
+          {saving ? 'Guardando...' : 'Guardar tarifas'}
         </button>
       </div>
     </div>
@@ -2160,18 +3010,34 @@ function ProductTierPricesEditor({ product, priceRows, fetchTierPrices }) {
 }
 
 function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
+  const isMobile = useIsMobile()
   const [draft, setDraft] = useState(emptySpecialClient)
   const [editingId, setEditingId] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [clientSearch, setClientSearch] = useState('')
+
+  const filteredClients = useMemo(() => {
+    const q = clientSearch.trim().toLowerCase()
+    if (!q) return specialClients
+    return specialClients.filter((client) =>
+      (client.name + ' ' + client.phone + ' ' + client.client_code + ' ' + client.client_tier).toLowerCase().includes(q)
+    )
+  }, [specialClients, clientSearch])
 
   const resetDraft = () => {
     setDraft(emptySpecialClient)
     setEditingId(null)
   }
 
+  const makeCode = () => {
+    const seed = (draft.name || 'cliente').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 5) || 'cli'
+    const suffix = String(Math.floor(1000 + Math.random() * 9000))
+    setDraft((prev) => ({ ...prev, client_code: seed + suffix, qr_value: seed + suffix }))
+  }
+
   const saveClient = async () => {
     if (!draft.name.trim() || !draft.client_code.trim()) {
-      alert('Pon nombre y código del cliente.')
+      alert('Pon nombre y codigo del cliente.')
       return
     }
 
@@ -2187,17 +3053,14 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
       notes: draft.notes || '',
     }
 
-    let response
-    if (editingId) {
-      response = await supabase.from('special_clients').update(payload).eq('id', editingId)
-    } else {
-      response = await supabase.from('special_clients').insert([payload])
-    }
+    const response = editingId
+      ? await supabase.from('special_clients').update(payload).eq('id', editingId)
+      : await supabase.from('special_clients').insert([payload])
 
     setLoading(false)
 
     if (response.error) {
-      alert(`No se pudo guardar cliente especial: ${response.error.message}`)
+      alert('No se pudo guardar cliente especial: ' + response.error.message)
       return
     }
 
@@ -2219,12 +3082,12 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
   }
 
   const deleteClient = async (id) => {
-    const ok = window.confirm('¿Eliminar cliente especial?')
+    const ok = window.confirm('Eliminar cliente especial?')
     if (!ok) return
 
     const { error } = await supabase.from('special_clients').delete().eq('id', id)
     if (error) {
-      alert(`No se pudo eliminar: ${error.message}`)
+      alert('No se pudo eliminar: ' + error.message)
       return
     }
 
@@ -2234,7 +3097,7 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
   const toggleClient = async (client) => {
     const { error } = await supabase.from('special_clients').update({ active: !client.active }).eq('id', client.id)
     if (error) {
-      alert(`No se pudo actualizar cliente: ${error.message}`)
+      alert('No se pudo actualizar cliente: ' + error.message)
       return
     }
 
@@ -2242,124 +3105,468 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
   }
 
   return (
-    <div style={{ ...styles.card, padding: 24, marginTop: 24 }}>
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 18 }}>
-        <QrCode />
-        <div>
-          <h3 style={{ margin: 0, fontSize: 26 }}>Clientes especiales</h3>
-          <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
-            Aquí puedes registrar clientes con código, categoría y acceso especial.
-          </p>
+    <div style={{ display: 'grid', gap: 18 }}>
+      <div style={{ ...styles.card, padding: 24 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 18 }}>
+          <QrCode />
+          <div>
+            <h3 style={{ margin: 0, fontSize: 28 }}>Clientes especiales</h3>
+            <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
+              Alta rapida con codigo, QR, categoria y estado.
+            </p>
+          </div>
         </div>
-      </div>
 
-      <div style={{ display: 'grid', gap: 14, gridTemplateColumns: 'repeat(2, minmax(0,1fr))' }}>
-        <input
-          style={styles.input}
-          placeholder="Nombre"
-          value={draft.name}
-          onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))}
-        />
-
-        <input
-          style={styles.input}
-          placeholder="Teléfono"
-          value={draft.phone}
-          onChange={(e) => setDraft((p) => ({ ...p, phone: e.target.value }))}
-        />
-
-        <input
-          style={styles.input}
-          placeholder="Código de cliente"
-          value={draft.client_code}
-          onChange={(e) => setDraft((p) => ({ ...p, client_code: e.target.value }))}
-        />
-
-        <input
-          style={styles.input}
-          placeholder="Valor QR (si lo dejas vacío usa el mismo código)"
-          value={draft.qr_value}
-          onChange={(e) => setDraft((p) => ({ ...p, qr_value: e.target.value }))}
-        />
-
-        <select
-          style={styles.input}
-          value={draft.client_tier}
-          onChange={(e) => setDraft((p) => ({ ...p, client_tier: e.target.value }))}
-        >
-          {CLIENT_TIERS.map((tier) => (
-            <option key={tier} value={tier}>{tier}</option>
-          ))}
-        </select>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'grid', gap: 14, gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0,1fr))' }}>
+          <input style={styles.input} placeholder="Nombre" value={draft.name} onChange={(e) => setDraft((p) => ({ ...p, name: e.target.value }))} />
+          <input style={styles.input} placeholder="Telefono" value={draft.phone} onChange={(e) => setDraft((p) => ({ ...p, phone: e.target.value }))} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input style={styles.input} placeholder="Codigo de cliente" value={draft.client_code} onChange={(e) => setDraft((p) => ({ ...p, client_code: e.target.value }))} />
+            <button type="button" style={styles.buttonSecondary} onClick={makeCode}>Generar</button>
+          </div>
+          <input style={styles.input} placeholder="Valor QR o codigo de barras" value={draft.qr_value} onChange={(e) => setDraft((p) => ({ ...p, qr_value: e.target.value }))} />
+          <select style={styles.input} value={draft.client_tier} onChange={(e) => setDraft((p) => ({ ...p, client_tier: e.target.value }))}>
+            {CLIENT_TIERS.map((tier) => (
+              <option key={tier} value={tier}>{tier}</option>
+            ))}
+          </select>
           <label style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <input
-              type="checkbox"
-              checked={draft.active}
-              onChange={(e) => setDraft((p) => ({ ...p, active: e.target.checked }))}
-            />
+            <input type="checkbox" checked={draft.active} onChange={(e) => setDraft((p) => ({ ...p, active: e.target.checked }))} />
             Activo
           </label>
+          <textarea style={{ ...styles.textarea, gridColumn: '1 / -1' }} placeholder="Notas" value={draft.notes} onChange={(e) => setDraft((p) => ({ ...p, notes: e.target.value }))} />
         </div>
 
-        <textarea
-          style={{ ...styles.textarea, gridColumn: '1 / -1' }}
-          placeholder="Notas"
-          value={draft.notes}
-          onChange={(e) => setDraft((p) => ({ ...p, notes: e.target.value }))}
-        />
+        <div style={{ display: 'flex', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
+          <button type="button" style={styles.buttonPrimary} onClick={saveClient} disabled={loading}>
+            <Save size={16} />
+            {editingId ? 'Guardar cliente' : 'Agregar cliente'}
+          </button>
+          <button type="button" style={styles.buttonSecondary} onClick={resetDraft}>Cancelar</button>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, marginTop: 14, flexWrap: 'wrap' }}>
-        <button type="button" style={styles.buttonPrimary} onClick={saveClient} disabled={loading}>
-          <Save size={16} />
-          {editingId ? 'Guardar cliente' : 'Agregar cliente'}
-        </button>
+      <div style={{ ...styles.card, padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0, fontSize: 24 }}>Directorio de clientes</h3>
+          <div style={{ position: 'relative', width: isMobile ? '100%' : 320 }}>
+            <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
+            <input style={{ ...styles.input, paddingLeft: 36 }} placeholder="Buscar cliente" value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} />
+          </div>
+        </div>
 
-        <button type="button" style={styles.buttonSecondary} onClick={resetDraft}>
-          Cancelar
-        </button>
-      </div>
-
-      <div style={{ display: 'grid', gap: 14, marginTop: 22 }}>
-        {specialClients.map((client) => (
-          <div key={client.id} style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 14 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'grid', gap: 12, marginTop: 18 }}>
+          {filteredClients.map((client) => (
+            <div key={client.id} style={{ border: '1px solid #e5e7eb', borderRadius: 16, padding: 14, display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr auto' }}>
               <div>
                 <strong style={{ fontSize: 20 }}>{client.name}</strong>
-                <div style={{ marginTop: 8, color: '#6b7280' }}>Código: {client.client_code}</div>
-                <div style={{ marginTop: 4, color: '#6b7280' }}>QR: {client.qr_value}</div>
-                <div style={{ marginTop: 4, color: '#6b7280' }}>Tel: {client.phone || '-'}</div>
-                <div style={{ marginTop: 4, color: '#6b7280' }}>Categoría: {client.client_tier || 'Plata'}</div>
+                <div style={{ marginTop: 8, color: '#6b7280' }}>Codigo: {client.client_code} | QR: {client.qr_value || '-'}</div>
+                <div style={{ marginTop: 4, color: '#6b7280' }}>Tel: {client.phone || '-'} | Categoria: {client.client_tier || 'Plata'}</div>
+                <Badge bg={client.active ? '#ecfdf5' : '#f3f4f6'} color={client.active ? '#047857' : '#6b7280'}>{client.active ? 'Activo' : 'Inactivo'}</Badge>
               </div>
 
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button type="button" style={styles.buttonSecondary} onClick={() => editClient(client)}>
-                  <Pencil size={16} />
-                  Editar
-                </button>
+                <button type="button" style={styles.buttonSecondary} onClick={() => editClient(client)}><Pencil size={16} />Editar</button>
+                <button type="button" style={styles.buttonSecondary} onClick={() => toggleClient(client)}>{client.active ? 'Desactivar' : 'Activar'}</button>
+                <button type="button" style={styles.buttonSecondary} onClick={() => deleteClient(client.id)}><Trash2 size={16} />Eliminar</button>
+              </div>
+            </div>
+          ))}
 
-                <button type="button" style={styles.buttonSecondary} onClick={() => toggleClient(client)}>
-                  {client.active ? 'Desactivar' : 'Activar'}
-                </button>
+          {filteredClients.length === 0 ? (
+            <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 18, color: '#6b7280' }}>
+              No hay clientes especiales con ese criterio.
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
 
-                <button type="button" style={styles.buttonSecondary} onClick={() => deleteClient(client.id)}>
-                  <Trash2 size={16} />
-                  Eliminar
-                </button>
+function OrdersAdmin({ orders, fetchOrders }) {
+  const isMobile = useIsMobile()
+  const [orderSearch, setOrderSearch] = useState('')
+  const [mode, setMode] = useState('activos')
+  const [savingId, setSavingId] = useState(null)
+
+  const updateStatus = async (order, status) => {
+    setSavingId(order.id)
+    const { error } = await supabase.from('orders').update({ status }).eq('id', order.id)
+    setSavingId(null)
+
+    if (error) {
+      alert('No se pudo actualizar pedido: ' + error.message)
+      return
+    }
+
+    await fetchOrders()
+  }
+
+  const visibleOrders = useMemo(() => {
+    const q = orderSearch.trim().toLowerCase()
+    return orders
+      .filter((order) => (mode === 'archivados' ? orderIsArchived(order.status) : !orderIsArchived(order.status)))
+      .filter((order) => {
+        if (!q) return true
+        return (
+          String(order.customer_name || '').toLowerCase().includes(q) ||
+          String(order.customer_phone || '').toLowerCase().includes(q) ||
+          String(order.status || '').toLowerCase().includes(q)
+        )
+      })
+  }, [orders, mode, orderSearch])
+
+  return (
+    <div style={{ ...styles.card, padding: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <div>
+          <h3 style={{ margin: 0, fontSize: 28 }}>Pedidos</h3>
+          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Actualiza estatus y archiva pedidos entregados o cancelados.</p>
+        </div>
+        <button type="button" style={styles.buttonSecondary} onClick={fetchOrders}>Actualizar</button>
+      </div>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 18 }}>
+        {[
+          ['activos', 'Activos'],
+          ['archivados', 'Archivados'],
+        ].map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setMode(value)}
+            style={{
+              ...styles.buttonSecondary,
+              background: mode === value ? '#111315' : '#fff',
+              color: mode === value ? '#fff' : '#111315',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+        <div style={{ position: 'relative', flex: isMobile ? '1 1 100%' : '1 1 280px' }}>
+          <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
+          <input style={{ ...styles.input, paddingLeft: 36 }} placeholder="Buscar por cliente, telefono o estatus" value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} />
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gap: 14, marginTop: 18 }}>
+        {visibleOrders.map((order) => {
+          const meta = getOrderStatusMeta(order.status)
+          const items = normalizeOrderItems(order.items_json)
+          const frozen = orderIsArchived(order.status)
+
+          return (
+            <div key={order.id} style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16, display: 'grid', gap: 14 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                <div>
+                  <strong style={{ fontSize: 20 }}>{order.customer_name || 'Cliente sin nombre'}</strong>
+                  <div style={{ marginTop: 6, color: '#6b7280' }}>{order.customer_phone || '-'} | {formatShortDate(order.created_at)}</div>
+                </div>
+                <span style={{ borderRadius: 999, padding: '8px 12px', background: meta.bg, color: meta.color, fontWeight: 900 }}>
+                  {meta.label}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gap: 8 }}>
+                {items.map((item, idx) => (
+                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#374151', borderBottom: '1px solid #f3f4f6', paddingBottom: 8 }}>
+                    <span>{item.name} | Talla {item.size} | {item.quantity} pz</span>
+                    <strong>{mxn(item.total || Number(item.unit_price || 0) * Number(item.quantity || 0))}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 12, alignItems: 'center' }}>
+                <div style={{ color: '#6b7280' }}>
+                  <strong style={{ color: '#111315' }}>Total:</strong> {mxn(order.subtotal)} | <strong style={{ color: '#111315' }}>Piezas:</strong> {order.total_pieces || items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)}
+                  {order.notes ? <div style={{ marginTop: 6 }}>Notas: {order.notes}</div> : null}
+                </div>
+
+                <select
+                  style={styles.input}
+                  value={order.status || 'nuevo'}
+                  disabled={savingId === order.id || frozen}
+                  onChange={(e) => updateStatus(order, e.target.value)}
+                >
+                  {ORDER_STATUSES.map((status) => (
+                    <option key={status.value} value={status.value}>{status.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )
+        })}
+
+        {visibleOrders.length === 0 ? (
+          <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 22, color: '#6b7280', textAlign: 'center' }}>
+            No hay pedidos en esta seccion.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+
+
+function DenimClickLogo({ variant = 'light', size = 'md' }) {
+  const color = variant === 'light' ? '#fff' : '#111315'
+  const cottonColor = variant === 'light' ? '#fff' : '#111315'
+  const scale = size === 'sm' ? 0.82 : size === 'lg' ? 1.18 : 1
+  const letterStyle = {
+    fontSize: Math.round(18 * scale),
+    fontWeight: 500,
+    lineHeight: 1,
+    color,
+    fontFamily: 'Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  }
+  const wordStyle = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: Math.round(9 * scale),
+  }
+
+  return (
+    <span
+      aria-label={STORE_NAME}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: Math.round(16 * scale),
+        color,
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <span style={wordStyle}>
+        {'DENIM'.split('').map((letter) => (
+          <span key={letter} style={letterStyle}>{letter}</span>
+        ))}
+      </span>
+
+      <svg
+        width={Math.round(42 * scale)}
+        height={Math.round(42 * scale)}
+        viewBox="0 0 64 64"
+        role="img"
+        aria-hidden="true"
+        style={{ display: 'block', flex: '0 0 auto' }}
+      >
+        <path
+          d="M32 10c8.8 0 15.8 6.6 16.5 15 7.3 1.3 12.8 7.7 12.8 15.3 0 8.7-7 15.7-15.6 15.7-4.7 0-8.8-2.1-11.7-5.3-2.8 3.2-7 5.3-11.7 5.3C13.7 56 6.7 49 6.7 40.3c0-7.6 5.4-14 12.7-15.3C20.1 16.6 27.2 10 32 10Z"
+          fill="none"
+          stroke={cottonColor}
+          strokeWidth="4.8"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M32 57V42"
+          fill="none"
+          stroke={cottonColor}
+          strokeWidth="5"
+          strokeLinecap="round"
+        />
+        <path
+          d="M32 20c6.6 8.2 8.2 16.3 0 25-8.2-8.7-6.6-16.8 0-25Z"
+          fill={cottonColor}
+        />
+        <path
+          d="M29.2 46.5C20.8 44.4 15 37.2 14.5 29c8.5 2.4 14 8.6 17.5 17.5h-2.8Z"
+          fill={cottonColor}
+        />
+        <path
+          d="M34.8 46.5C43.2 44.4 49 37.2 49.5 29c-8.5 2.4-14 8.6-17.5 17.5h2.8Z"
+          fill={cottonColor}
+        />
+      </svg>
+
+      <span style={wordStyle}>
+        {'CLICK'.split('').map((letter) => (
+          <span key={letter} style={letterStyle}>{letter}</span>
+        ))}
+      </span>
+    </span>
+  )
+}
+
+function SocialIcon({ icon, size = 20 }) {
+  if (icon === 'facebook') return <Facebook size={size} />
+  if (icon === 'instagram') return <Instagram size={size} />
+  if (icon === 'youtube') return <Youtube size={size} />
+  return <Music2 size={size} />
+}
+
+function HelpInfoSection({ isMobile }) {
+  const supportMessage = encodeURIComponent('Hola Denim Click, necesito ayuda con mi pedido o una compra.')
+  const supportLink = 'https://wa.me/' + SUPPORT_WHATSAPP_NUMBER + '?text=' + supportMessage
+  const faqs = [
+    {
+      question: 'Como solicito un apartado?',
+      answer: 'Agrega las prendas a tu bolsa, revisa tallas y cantidades, y presiona Solicitar apartado por WhatsApp. El mensaje se abre listo para confirmar.',
+    },
+    {
+      question: 'Cuando aplica el precio de mayoreo?',
+      answer: 'La bolsa calcula el precio por piezas totales. Desde 3 piezas entra precio 3+ y desde 10 piezas entra el mejor precio por volumen.',
+    },
+    {
+      question: 'Como funciona el paquete cerrado?',
+      answer: 'El paquete cerrado es del mismo modelo con diferentes tallas disponibles. En el producto puedes elegir paquete y ajustar cantidades segun stock.',
+    },
+    {
+      question: 'Que pasa si una talla esta agotada?',
+      answer: 'Las tallas sin stock aparecen bloqueadas y no se pueden agregar a la bolsa.',
+    },
+    {
+      question: 'Como reviso el estatus de mi pedido?',
+      answer: 'En la seccion Estatus de pedido escribe el telefono con el que solicitaste tu apartado para ver el avance.',
+    },
+    {
+      question: 'Como entro con precio especial?',
+      answer: 'Si tienes codigo de cliente, puedes escribirlo o escanear tu QR para activar tu tarifa especial.',
+    },
+  ]
+
+  return (
+    <section style={{ background: '#f7f4ef', padding: isMobile ? '34px 0' : '52px 0' }}>
+      <div style={styles.container}>
+        <div style={{ display: 'grid', gap: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr .82fr', gap: 18, alignItems: 'stretch' }}>
+            <div style={{ ...styles.card, borderRadius: isMobile ? 0 : 8, padding: isMobile ? 20 : 28 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <HelpCircle size={28} />
+                <div>
+                  <p style={{ margin: 0, color: '#9a6b16', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Ayuda</p>
+                  <h2 style={{ margin: '4px 0 0', fontSize: isMobile ? 28 : 38, lineHeight: 1.02 }}>Preguntas frecuentes</h2>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gap: 10, marginTop: 22 }}>
+                {faqs.map((item) => (
+                  <details
+                    key={item.question}
+                    style={{
+                      border: '1px solid #e5dfd4',
+                      borderRadius: 8,
+                      background: '#fff',
+                      padding: '14px 16px',
+                    }}
+                  >
+                    <summary style={{ cursor: 'pointer', fontWeight: 950, color: '#111315' }}>{item.question}</summary>
+                    <p style={{ margin: '10px 0 0', color: '#4b5563', lineHeight: 1.55 }}>{item.answer}</p>
+                  </details>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gap: 18 }}>
+              <div style={{ ...styles.card, borderRadius: isMobile ? 0 : 8, padding: isMobile ? 20 : 26, background: '#111315', color: '#fff' }}>
+                <Headphones size={28} color="#f7d38a" />
+                <h2 style={{ margin: '14px 0 0', fontSize: isMobile ? 26 : 32 }}>Soporte</h2>
+                <p style={{ margin: '10px 0 0', color: 'rgba(255,255,255,.72)', lineHeight: 1.6 }}>
+                  Si tienes dudas sobre tallas, stock, apartado, envio o seguimiento, contactanos directo por WhatsApp.
+                </p>
+                <a
+                  href={supportLink}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    ...styles.buttonPrimary,
+                    marginTop: 18,
+                    display: 'inline-flex',
+                    textDecoration: 'none',
+                    background: '#fff',
+                    color: '#111315',
+                    borderRadius: 999,
+                  }}
+                >
+                  <MessageCircle size={18} />
+                  Contactar soporte
+                </a>
+              </div>
+
+              <div style={{ ...styles.card, borderRadius: isMobile ? 0 : 8, padding: isMobile ? 20 : 26 }}>
+                <p style={{ margin: 0, color: '#9a6b16', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Informacion</p>
+                <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 26 : 32 }}>Quienes somos</h2>
+                <p style={{ margin: '10px 0 0', color: '#4b5563', lineHeight: 1.65 }}>
+                  En Denim Click somos una tienda especializada en mezclilla y moda casual, enfocada en ayudarte a comprar mejor y vender más. Ofrecemos precios por pieza y mayoreo, con información clara para que revises disponibilidad y hagas tus apartados de forma fácil y segura. Nuestro objetivo es que tomes decisiones rápidas, con confianza, y aproveches cada oportunidad para crecer tu negocio.
+                </p>
               </div>
             </div>
           </div>
-        ))}
-
-        {specialClients.length === 0 && (
-          <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 18, color: '#6b7280' }}>
-            No hay clientes especiales registrados.
-          </div>
-        )}
+        </div>
       </div>
-    </div>
+    </section>
+  )
+}
+
+function OrderStatusLookup({ specialClientSession, isMobile }) {
+  const [phone, setPhone] = useState(specialClientSession?.phone || '')
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (specialClientSession?.phone) setPhone(specialClientSession.phone)
+  }, [specialClientSession?.phone])
+
+  const findOrders = async () => {
+    const digits = phone.replace(/\D/g, '')
+    if (digits.length < 8) {
+      alert('Escribe el telefono con el que solicitaste tu apartado.')
+      return
+    }
+
+    setLoading(true)
+    const { data, error } = await supabase
+      .from('orders')
+      .select('*')
+      .in('customer_phone', uniqueValues([phone, digits]))
+      .order('created_at', { ascending: false })
+      .limit(10)
+    setLoading(false)
+
+    if (error) {
+      alert('No se pudo consultar tu pedido: ' + error.message)
+      return
+    }
+
+    setOrders(data || [])
+  }
+
+  return (
+    <section style={{ padding: isMobile ? '8px 0 24px' : '16px 0 32px' }}>
+      <div style={styles.container}>
+        <div style={{ ...styles.card, borderRadius: isMobile ? 0 : 8, padding: isMobile ? 18 : 24 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 16, alignItems: 'end' }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: isMobile ? 24 : 30 }}>Estatus de pedido</h2>
+              <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Consulta como va tu apartado con tu numero de telefono.</p>
+            </div>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <input style={{ ...styles.input, minWidth: isMobile ? '100%' : 240 }} placeholder="Telefono del pedido" value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <button type="button" style={styles.buttonPrimary} onClick={findOrders} disabled={loading}>{loading ? 'Buscando...' : 'Consultar'}</button>
+            </div>
+          </div>
+
+          {orders.length > 0 ? (
+            <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
+              {orders.map((order) => {
+                const meta = getOrderStatusMeta(order.status)
+                return (
+                  <div key={order.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', border: '1px solid #e5e7eb', borderRadius: 14, padding: 12 }}>
+                    <div>
+                      <strong>{formatShortDate(order.created_at)}</strong>
+                      <div style={{ color: '#6b7280', marginTop: 4 }}>{order.total_pieces || 0} piezas | {mxn(order.subtotal)}</div>
+                    </div>
+                    <span style={{ borderRadius: 999, padding: '8px 12px', background: meta.bg, color: meta.color, fontWeight: 900 }}>{meta.label}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -2386,6 +3593,7 @@ function StoreView({
   customer,
   setCustomer,
   sendOrder,
+  orderLoading,
   gallery,
   setGallery,
   specialClientSession,
@@ -2398,10 +3606,17 @@ function StoreView({
   const [openMegaMenu, setOpenMegaMenu] = useState(false)
   const [megaAudience, setMegaAudience] = useState('Hombre')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [loginOpen, setLoginOpen] = useState(false)
+  const [loginOpen, setLoginOpen] = useState(() => !specialClientSession?.active)
+  const [bagOpen, setBagOpen] = useState(false)
+  const [quickViewProduct, setQuickViewProduct] = useState(null)
 
   const visibleBrands = uniqueValues([...BRANDS, ...products.map((p) => p.brand)])
   const visibleCategories = getAudienceCategories(storeAudience, customCategories).filter((c) => c !== 'Playera')
+  const activeProducts = useMemo(() => products.filter((p) => p.active), [products])
+  const featuredProducts = useMemo(() => activeProducts.filter((p) => getCover(p)), [activeProducts])
+  const heroProduct = featuredProducts.find((p) => p.is_offer) || featuredProducts[0]
+  const offerProduct = activeProducts.find((p) => p.is_offer && getCover(p)) || heroProduct
+  const totalAvailable = activeProducts.reduce((sum, product) => sum + totalStock(product.stock), 0)
   const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
   
   const firstClientName = specialClientSession?.name
@@ -2458,8 +3673,26 @@ function StoreView({
               gap: 14,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 18 }}>
-              <img src={STORE_LOGO} alt={STORE_NAME} style={{ width: isMobile ? 110 : 132, objectFit: 'contain' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 12 : 18 }}>
+              {isMobile ? (
+                <button
+                  type="button"
+                  aria-label="Abrir menu"
+                  onClick={() => setMobileMenuOpen(true)}
+                  style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: 0 }}
+                >
+                  <Menu size={34} />
+                </button>
+              ) : null}
+
+              <button
+                type="button"
+                aria-label="Ir al inicio"
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
+              >
+                <DenimClickLogo variant="light" size={isMobile ? 'sm' : 'md'} />
+              </button>
             </div>
 
             {!isMobile ? (
@@ -2511,6 +3744,47 @@ function StoreView({
             ) : null}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                type="button"
+                aria-label="Abrir bolsa de apartados"
+                onClick={() => setBagOpen(true)}
+                style={{
+                  width: isMobile ? 48 : 52,
+                  height: isMobile ? 48 : 52,
+                  borderRadius: 999,
+                  border: '1px solid rgba(255,255,255,.16)',
+                  background: '#fff',
+                  color: '#111315',
+                  display: 'grid',
+                  placeItems: 'center',
+                  position: 'relative',
+                  cursor: 'pointer',
+                  flex: '0 0 auto',
+                }}
+              >
+                <ShoppingBag size={22} />
+                {totalPieces > 0 ? (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      right: -4,
+                      top: -5,
+                      minWidth: 22,
+                      height: 22,
+                      borderRadius: 999,
+                      background: '#f7d38a',
+                      border: '2px solid #111315',
+                      display: 'grid',
+                      placeItems: 'center',
+                      fontSize: 12,
+                      fontWeight: 900,
+                    }}
+                  >
+                    {totalPieces}
+                  </span>
+                ) : null}
+              </button>
+
               {!isMobile ? (
                 <div style={{ position: 'relative', width: 250 }}>
                   <Search size={17} color="#9ca3af" style={{ position: 'absolute', top: 14, left: 12 }} />
@@ -2532,29 +3806,48 @@ function StoreView({
                             {specialClientSession?.active ? (
                 <button
                   type="button"
+                  aria-label="Ver sesion de cliente"
+                  title={isMobile ? 'Cliente activo' : 'Cliente activo: ' + firstClientName}
                   style={{
-                    ...styles.buttonSecondary,
-                    fontWeight: 800,
+                    width: isMobile ? 48 : 52,
+                    height: isMobile ? 48 : 52,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,.16)',
+                    background: '#f7d38a',
+                    color: '#111315',
+                    display: 'grid',
+                    placeItems: 'center',
+                    cursor: 'pointer',
+                    flex: '0 0 auto',
                   }}
                   onClick={() => setLoginOpen(true)}
                 >
-                  Bienvenido, {firstClientName}
+                  <User size={20} />
                 </button>
               ) : (
-                <button type="button" style={styles.buttonSecondary} onClick={() => setLoginOpen(true)}>
-                  Inicia sesión
+                <button
+                  type="button"
+                  aria-label="Iniciar sesion"
+                  title="Iniciar sesion"
+                  style={{
+                    width: isMobile ? 48 : 52,
+                    height: isMobile ? 48 : 52,
+                    borderRadius: 999,
+                    border: '1px solid rgba(255,255,255,.16)',
+                    background: '#fff',
+                    color: '#111315',
+                    display: 'grid',
+                    placeItems: 'center',
+                    cursor: 'pointer',
+                    flex: '0 0 auto',
+                  }}
+                  onClick={() => setLoginOpen(true)}
+                >
+                  <User size={20} />
                 </button>
               )}
 
-              {isMobile ? (
-                <button
-                  type="button"
-                  onClick={() => setMobileMenuOpen(true)}
-                  style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer' }}
-                >
-                  <Menu size={32} />
-                </button>
-              ) : null}
+
             </div>
           </div>
 
@@ -2586,74 +3879,118 @@ function StoreView({
         customFits={customFits}
       />
 
-      <section style={{ padding: isMobile ? '16px 0 10px' : '28px 0 14px' }}>
+      <section style={{ padding: isMobile ? '16px 0 18px' : '30px 0 24px' }}>
         <div style={styles.container}>
           <div
             style={{
               display: 'grid',
-              gap: 22,
-              gridTemplateColumns: isMobile ? '1fr' : '1.15fr .85fr',
-              alignItems: 'start',
+              gap: isMobile ? 16 : 24,
+              gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.1fr) minmax(360px, .9fr)',
+              alignItems: 'stretch',
             }}
           >
-            {!isMobile ? (
-              <div>
-                <h1
-                  style={{
-                    margin: 0,
-                    fontSize: 46,
-                    lineHeight: 1.02,
-                    fontWeight: 800,
-                    maxWidth: 660,
-                  }}
-                >
-                  Aparta mercancía y desbloquea mejor precio por volumen.
+            <div
+              style={{
+                position: 'relative',
+                minHeight: isMobile ? 520 : 620,
+                overflow: 'hidden',
+                background: '#111315',
+                color: '#fff',
+                borderRadius: isMobile ? 0 : 8,
+              }}
+            >
+              {heroProduct && getCover(heroProduct) ? (
+                <img
+                  src={getCover(heroProduct)}
+                  alt={heroProduct.name}
+                  loading="eager"
+                  decoding="async"
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                />
+              ) : (
+                <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#1f2937' }}>
+                  <DenimClickLogo variant="light" size="lg" />
+                </div>
+              )}
+
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.10) 25%, rgba(0,0,0,.78) 100%)' }} />
+
+              <div style={{ position: 'absolute', left: isMobile ? 20 : 34, right: isMobile ? 20 : 34, bottom: isMobile ? 24 : 34 }}>
+                <p style={{ margin: 0, color: '#f7d38a', fontSize: 13, fontWeight: 950, textTransform: 'uppercase', letterSpacing: 0 }}>
+                  Producto destacado
+                </p>
+                <h1 style={{ margin: '10px 0 0', fontSize: isMobile ? 44 : 72, lineHeight: .93, maxWidth: 780 }}>
+                  {heroProduct?.name || 'Denim Click'}
                 </h1>
-              </div>
-            ) : null}
+                <p style={{ margin: '14px 0 0', color: 'rgba(255,255,255,.78)', fontSize: isMobile ? 16 : 19, maxWidth: 620, lineHeight: 1.55 }}>
+                  {heroProduct
+                    ? heroProduct.brand + ' · ' + heroProduct.category + (heroProduct.subcategory ? ' · ' + heroProduct.subcategory : '')
+                    : 'Explora productos destacados, ofertas y apartados por WhatsApp.'}
+                </p>
 
-            <div style={{ ...styles.card, padding: isMobile ? 18 : 22, display: 'grid', gap: 12 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-                <div>
-                  <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Nivel actual</p>
-                  <h2 style={{ margin: '5px 0 0', fontSize: isMobile ? 26 : 34 }}>
-                    {specialClientSession?.active ? `Cliente ${specialClientSession.client_tier}` : 'Precio normal'}
-                  </h2>
-                </div>
-
-                <div
-                  style={{
-                    background: '#f3f4f6',
-                    borderRadius: 16,
-                    padding: '10px 14px',
-                    minWidth: 78,
-                    textAlign: 'center',
-                  }}
-                >
-                  <p style={{ margin: 0, color: '#6b7280', fontSize: 13 }}>Piezas</p>
-                  <p style={{ margin: '4px 0 0', fontWeight: 800, fontSize: 24 }}>{totalPieces}</p>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 22 }}>
+                  <button
+                    type="button"
+                    onClick={() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' })}
+                    style={{ ...styles.buttonPrimary, background: '#fff', color: '#111315', boxShadow: 'none', borderRadius: 999 }}
+                  >
+                    Ver catalogo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => heroProduct && setQuickViewProduct(heroProduct)}
+                    style={{ ...styles.buttonSecondary, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,.34)', borderRadius: 999 }}
+                  >
+                    Ver producto
+                  </button>
                 </div>
               </div>
+            </div>
 
-              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr 1fr' }}>
-                <div style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16 }}>
-                  <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Subtotal estimado</p>
-                  <p style={{ margin: '6px 0 0', fontWeight: 800, fontSize: 22 }}>{mxn(subtotalPreview)}</p>
+            <div style={{ display: 'grid', gap: 14 }}>
+              <div style={{ ...styles.card, borderRadius: isMobile ? 0 : 8, overflow: 'hidden', padding: 0 }}>
+                <div style={{ position: 'relative', minHeight: isMobile ? 270 : 330, background: '#e8e2d8' }}>
+                  {offerProduct && getCover(offerProduct) ? (
+                    <img src={getCover(offerProduct)} alt={offerProduct.name} loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : null}
+                  <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.06) 20%, rgba(0,0,0,.70) 100%)' }} />
+                  <div style={{ position: 'absolute', left: 18, right: 18, bottom: 18, color: '#fff' }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 950, color: '#f7d38a', textTransform: 'uppercase' }}>Promocion activa</p>
+                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 28 : 34, lineHeight: 1.04 }}>
+                      {offerProduct?.is_offer ? 'Oferta disponible' : 'Apartado por mayoreo'}
+                    </h2>
+                    <p style={{ margin: '8px 0 0', color: 'rgba(255,255,255,.82)' }}>
+                      {offerProduct?.name || 'Agrega piezas y desbloquea mejor precio.'}
+                    </p>
+                  </div>
                 </div>
+              </div>
 
-                <div style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16 }}>
-                  <p style={{ margin: 0, color: '#6b7280', fontSize: 14 }}>Venta</p>
-                  <p style={{ margin: '6px 0 0', fontWeight: 700 }}>Piezas mixtas</p>
-                  <p style={{ margin: '8px 0 0', color: '#d97706', fontSize: 14 }}>
-                    {specialClientSession?.active
-                      ? 'Tu sesión de cliente ya está activa y se aplican tus precios especiales.'
-                      : totalPieces < 3
-                        ? `Agrega ${3 - totalPieces} pieza${3 - totalPieces > 1 ? 's' : ''} más para precio de 3+ piezas.`
-                        : totalPieces < 10
-                          ? `Ya activaste 3+ piezas. Agrega ${10 - totalPieces} más para llegar al mejor precio.`
-                          : 'Ya tienes el mejor precio por volumen de 10+ piezas.'}
-                  </p>
-                </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                {[
+                  { label: 'Productos activos', value: activeProducts.length },
+                  { label: 'Stock visible', value: totalAvailable },
+                  { label: 'Piezas en bolsa', value: totalPieces },
+                  { label: 'Subtotal', value: mxn(subtotalPreview) },
+                ].map((stat) => (
+                  <div key={stat.label} style={{ border: '1px solid #e5dfd4', background: '#fff', borderRadius: 8, padding: 14 }}>
+                    <p style={{ margin: 0, color: '#6b7280', fontSize: 12, fontWeight: 800 }}>{stat.label}</p>
+                    <p style={{ margin: '6px 0 0', fontWeight: 950, fontSize: isMobile ? 22 : 26 }}>{stat.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: '#111315', color: '#fff', borderRadius: isMobile ? 0 : 8, padding: 18 }}>
+                <p style={{ margin: 0, color: '#f7d38a', fontWeight: 950 }}>Mayoreo inteligente</p>
+                <p style={{ margin: '8px 0 0', color: 'rgba(255,255,255,.78)', lineHeight: 1.55 }}>
+                  {specialClientSession?.active
+                    ? 'Tu codigo de cliente esta activo y se aplican tus precios especiales.'
+                    : totalPieces < 3
+                      ? 'Te faltan ' + (3 - totalPieces) + ' pieza' + (3 - totalPieces > 1 ? 's' : '') + ' para precio de 3+ piezas.'
+                      : totalPieces < 10
+                        ? 'Ya tienes 3+ piezas. Te faltan ' + (10 - totalPieces) + ' para el mejor precio.'
+                        : 'Ya tienes el mejor precio por volumen.'}
+                </p>
               </div>
             </div>
           </div>
@@ -2730,13 +4067,14 @@ function StoreView({
                   selectedConfig={selectedConfig}
                   setSelectedConfig={setSelectedConfig}
                   onAddToCart={addToCart}
-                  onOpenGallery={(prod) =>
+                  onOpenGallery={(prod, imageIndex = 0) =>
                     setGallery({
                       open: true,
                       product: prod,
-                      imageIndex: 0,
+                      imageIndex,
                     })
                   }
+                  onOpenQuickView={(prod) => setQuickViewProduct(prod)}
                   specialClientSession={specialClientSession}
                   isMobile={isMobile}
                 />
@@ -2746,13 +4084,38 @@ function StoreView({
         </div>
       </section>
 
-      <CartSection
+      <OrderStatusLookup specialClientSession={specialClientSession} isMobile={isMobile} />
+
+      <HelpInfoSection isMobile={isMobile} />
+
+      <ProductQuickView
+        open={!!quickViewProduct}
+        product={quickViewProduct}
+        isMobile={isMobile}
+        selectedConfig={selectedConfig}
+        setSelectedConfig={setSelectedConfig}
+        onAddToCart={addToCart}
+        onClose={() => setQuickViewProduct(null)}
+        onOpenGallery={(prod, imageIndex = 0) =>
+          setGallery({
+            open: true,
+            product: prod,
+            imageIndex,
+          })
+        }
+        specialClientSession={specialClientSession}
+      />
+
+      <CartDrawer
+        open={bagOpen}
+        onClose={() => setBagOpen(false)}
         isMobile={isMobile}
         cart={cart}
         setCart={setCart}
         customer={customer}
         setCustomer={setCustomer}
         sendOrder={sendOrder}
+        orderLoading={orderLoading}
         specialClientSession={specialClientSession}
         getCartUnitPrice={getCartUnitPrice}
       />
@@ -2769,6 +4132,114 @@ function StoreView({
         }
         onClose={() => setGallery({ open: false, product: null, imageIndex: 0 })}
       />
+
+      <footer style={{ background: '#111315', color: '#fff', padding: isMobile ? '30px 0' : '42px 0', marginTop: 0 }}>
+        <div style={styles.container}>
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: isMobile ? '1fr' : '1fr 1.1fr auto',
+              gap: isMobile ? 24 : 34,
+              alignItems: 'start',
+            }}
+          >
+            <div>
+              <button
+                type="button"
+                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
+              >
+                <DenimClickLogo variant="light" size="md" />
+              </button>
+              <p style={{ margin: '12px 0 0', color: 'rgba(255,255,255,.62)', lineHeight: 1.55 }}>
+                Apartados, mayoreo y seguimiento directo por WhatsApp.
+              </p>
+            </div>
+
+            <div style={{ display: 'grid', gap: 10 }}>
+              <h3 style={{ margin: 0, fontSize: 22 }}>Aparta tus prendas por WhatsApp</h3>
+              <p style={{ margin: 0, color: 'rgba(255,255,255,.68)', lineHeight: 1.6 }}>
+                La bolsa guarda tu seleccion, calcula mayoreo y prepara el mensaje para confirmar directo con Denim Click.
+              </p>
+              <button type="button" onClick={() => setBagOpen(true)} style={{ ...styles.buttonSecondary, borderRadius: 999, width: 'fit-content' }}>
+                <ShoppingBag size={18} />
+                Ver bolsa
+              </button>
+            </div>
+
+            <div>
+              <h3 style={{ margin: 0, fontSize: 18 }}>Redes sociales</h3>
+              <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+                {SOCIAL_LINKS.map((social) => {
+                  const isReady = Boolean(social.href)
+
+                  return isReady ? (
+                    <a
+                      key={social.label}
+                      href={social.href}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={social.label}
+                      title={social.label}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 999,
+                        border: '1px solid rgba(255,255,255,.18)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        color: '#fff',
+                        textDecoration: 'none',
+                        background: 'rgba(255,255,255,.06)',
+                      }}
+                    >
+                      <SocialIcon icon={social.icon} />
+                    </a>
+                  ) : (
+                    <span
+                      key={social.label}
+                      aria-label={social.label + ' proximamente'}
+                      title={social.label + ' proximamente'}
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 999,
+                        border: '1px solid rgba(255,255,255,.10)',
+                        display: 'grid',
+                        placeItems: 'center',
+                        color: 'rgba(255,255,255,.36)',
+                        background: 'rgba(255,255,255,.03)',
+                      }}
+                    >
+                      <SocialIcon icon={social.icon} />
+                    </span>
+                  )
+                })}
+              </div>
+              <p style={{ margin: '12px 0 0', color: 'rgba(255,255,255,.46)', fontSize: 12 }}>
+                Instagram y YouTube quedaran enlazados cuando compartas las URLs.
+              </p>
+            </div>
+          </div>
+
+          <div
+            style={{
+              borderTop: '1px solid rgba(255,255,255,.10)',
+              marginTop: 30,
+              paddingTop: 18,
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+              color: 'rgba(255,255,255,.52)',
+              fontSize: 13,
+            }}
+          >
+            <span>Denim Click</span>
+            <span>Soporte WhatsApp: 56 4112 4995</span>
+          </div>
+        </div>
+      </footer>
 
       <LoginClientModal
         open={loginOpen}
@@ -2792,39 +4263,59 @@ function AdminView({
   fetchSpecialClients,
   productTierPrices,
   fetchTierPrices,
+  orders,
+  fetchOrders,
 }) {
   const isMobile = useIsMobile()
+  const [activeTab, setActiveTab] = useState('resumen')
   const [adminSearch, setAdminSearch] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [editingDraft, setEditingDraft] = useState(null)
   const [newProductDraft, setNewProductDraft] = useState(buildEmptyProduct())
+  const [showProductForm, setShowProductForm] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState('Todos')
+  const [audienceFilter, setAudienceFilter] = useState('Todo')
+  const [expandedPrices, setExpandedPrices] = useState({})
+
+  const productCategories = useMemo(() => uniqueValues(products.map((p) => p.category)), [products])
 
   const filteredProducts = useMemo(() => {
-    if (!adminSearch.trim()) return products
-    const q = adminSearch.toLowerCase()
-    return products.filter((p) =>
-      `${p.name} ${p.category} ${p.subcategory} ${p.brand} ${p.audience}`.toLowerCase().includes(q)
-    )
-  }, [products, adminSearch])
+    let list = [...products]
+    if (categoryFilter !== 'Todos') list = list.filter((p) => p.category === categoryFilter)
+    if (audienceFilter !== 'Todo') list = list.filter((p) => p.audience === audienceFilter)
+    if (adminSearch.trim()) {
+      const q = adminSearch.toLowerCase()
+      list = list.filter((p) => (p.name + ' ' + p.category + ' ' + p.subcategory + ' ' + p.brand + ' ' + p.audience).toLowerCase().includes(q))
+    }
+    return list
+  }, [products, adminSearch, categoryFilter, audienceFilter])
+
+  const groupedProducts = useMemo(() => {
+    return productCategories
+      .filter((category) => categoryFilter === 'Todos' || category === categoryFilter)
+      .map((category) => ({
+        category,
+        items: filteredProducts.filter((product) => product.category === category),
+      }))
+      .filter((group) => group.items.length > 0)
+  }, [productCategories, filteredProducts, categoryFilter])
 
   const stats = useMemo(() => {
+    const activeOrders = orders.filter((order) => !orderIsArchived(order.status)).length
     return {
       total: products.length,
       active: products.filter((p) => p.active).length,
       stock: products.reduce((sum, p) => sum + Number(p.stock_total || 0), 0),
+      clients: specialClients.length,
+      orders: activeOrders,
     }
-  }, [products])
+  }, [products, specialClients.length, orders])
 
   const prepareDraftForSave = (draft) => {
     const finalCategory = draft.customCategory?.trim() || draft.category
     const finalSubcategory = finalCategory === 'Jeans' ? draft.customSubcategory?.trim() || draft.subcategory : ''
     const finalBrand = draft.customBrand?.trim() || draft.brand
-    return {
-      ...draft,
-      category: finalCategory,
-      subcategory: finalSubcategory,
-      brand: finalBrand,
-    }
+    return { ...draft, category: finalCategory, subcategory: finalSubcategory, brand: finalBrand }
   }
 
   const addProduct = async () => {
@@ -2840,36 +4331,26 @@ function AdminView({
     setLoading(false)
 
     if (error) {
-      alert(`No se pudo crear el producto: ${error.message}`)
+      alert('No se pudo crear el producto: ' + error.message)
       return
     }
 
     const inserted = data?.[0]
     if (inserted?.id) {
       for (const tier of CLIENT_TIERS) {
-        await supabase.from('product_customer_prices').insert([
-          {
-            product_id: inserted.id,
-            client_tier: tier,
-            price: Number(clean.special_price || clean.price || 0),
-          },
-        ])
+        await supabase.from('product_customer_prices').insert([{ product_id: inserted.id, client_tier: tier, price: Number(clean.price_tier10 || clean.price_tier3 || clean.price || 0) }])
       }
       await fetchTierPrices()
     }
 
     setNewProductDraft(buildEmptyProduct())
+    setShowProductForm(false)
     await fetchProducts()
   }
 
   const startEdit = (product) => {
     setEditingId(product.id)
-    setEditingDraft({
-      ...product,
-      customCategory: '',
-      customSubcategory: '',
-      customBrand: '',
-    })
+    setEditingDraft({ ...product, customCategory: '', customSubcategory: '', customBrand: '' })
   }
 
   const saveEdit = async () => {
@@ -2885,7 +4366,7 @@ function AdminView({
     setLoading(false)
 
     if (error) {
-      alert(`No se pudo actualizar el producto: ${error.message}`)
+      alert('No se pudo actualizar el producto: ' + error.message)
       return
     }
 
@@ -2897,217 +4378,223 @@ function AdminView({
   const toggleActive = async (id, next) => {
     const { error } = await supabase.from('products').update({ active: next }).eq('id', id)
     if (error) {
-      alert(`No se pudo cambiar el estado: ${error.message}`)
+      alert('No se pudo cambiar el estado: ' + error.message)
       return
     }
     await fetchProducts()
   }
 
   const deleteProduct = async (id) => {
-    const ok = window.confirm('¿Seguro que deseas eliminar este producto?')
+    const ok = window.confirm('Seguro que deseas eliminar este producto?')
     if (!ok) return
 
     await supabase.from('product_customer_prices').delete().eq('product_id', id)
-
     const { error } = await supabase.from('products').delete().eq('id', id)
     if (error) {
-      alert(`No se pudo eliminar: ${error.message}`)
+      alert('No se pudo eliminar: ' + error.message)
       return
     }
     await fetchProducts()
     await fetchTierPrices()
   }
 
+  const tabButton = (tab) => (
+    <button
+      key={tab.key}
+      type="button"
+      onClick={() => setActiveTab(tab.key)}
+      style={{
+        border: '1px solid ' + (activeTab === tab.key ? '#111315' : '#d1d5db'),
+        background: activeTab === tab.key ? '#111315' : '#fff',
+        color: activeTab === tab.key ? '#fff' : '#111315',
+        borderRadius: 999,
+        padding: '12px 16px',
+        fontWeight: 900,
+        cursor: 'pointer',
+      }}
+    >
+      {tab.label}
+    </button>
+  )
+
+  const renderProductCard = (product) => (
+    <div key={product.id} style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16, background: '#fff' }}>
+      {editingId === product.id && editingDraft ? (
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+            <h4 style={{ margin: 0, fontSize: 22 }}>Editando producto</h4>
+            <button type="button" onClick={() => { setEditingId(null); setEditingDraft(null) }} style={styles.buttonSecondary}>
+              <X size={16} />
+            </button>
+          </div>
+          <ProductForm draft={editingDraft} setDraft={setEditingDraft} onSave={saveEdit} onCancel={() => { setEditingId(null); setEditingDraft(null) }} loading={loading} saveLabel="Guardar cambios" products={products} />
+        </>
+      ) : (
+        <>
+          <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '92px 1fr' : '120px 1fr auto', alignItems: 'start' }}>
+            <div style={{ borderRadius: 12, overflow: 'hidden', background: '#f3f4f6', minHeight: 110 }}>
+              {getCover(product) ? (
+                <img src={getCover(product)} alt={product.name} style={{ width: '100%', height: 118, objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: '100%', height: 118, display: 'grid', placeItems: 'center' }}><ImageIcon size={32} color="#9ca3af" /></div>
+              )}
+            </div>
+
+            <div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <h4 style={{ margin: 0, fontSize: 22 }}>{product.name}</h4>
+                <Badge>{product.audience}</Badge>
+                <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
+                {product.category === 'Jeans' && product.subcategory ? <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge> : null}
+                {product.is_offer ? <Badge bg="#fef3c7" color="#92400e">Oferta</Badge> : null}
+              </div>
+              <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category} | Stock {product.stock_total}</p>
+
+              <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', marginTop: 12 }}>
+                {[
+                  ['1 pz', product.price],
+                  ['3+ pz', product.price_tier3],
+                  ['10+ pz', product.price_tier10],
+                  ['Paquete', product.special_price],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ background: '#f3f4f6', borderRadius: 12, padding: 10 }}>
+                    <small style={{ color: '#6b7280' }}>{label}</small>
+                    <div style={{ fontWeight: 900 }}>{mxn(value)}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: 8, gridColumn: isMobile ? '1 / -1' : 'auto' }}>
+              <button type="button" style={styles.buttonSecondary} onClick={() => startEdit(product)}><Pencil size={16} />Editar</button>
+              <button type="button" style={styles.buttonSecondary} onClick={() => toggleActive(product.id, !product.active)}>{product.active ? 'Ocultar' : 'Activar'}</button>
+              <button type="button" style={styles.buttonSecondary} onClick={() => deleteProduct(product.id)}><Trash2 size={16} />Eliminar</button>
+              <button type="button" style={styles.buttonSecondary} onClick={() => setExpandedPrices((prev) => ({ ...prev, [product.id]: !prev[product.id] }))}>
+                Tarifas
+              </button>
+            </div>
+          </div>
+
+          {expandedPrices[product.id] ? (
+            <ProductTierPricesEditor product={product} priceRows={productTierPrices} fetchTierPrices={fetchTierPrices} />
+          ) : null}
+        </>
+      )}
+    </div>
+  )
+
   return (
     <section style={{ padding: '28px 0 50px' }}>
       <div style={styles.container}>
-        <div style={{ display: 'grid', gap: 24, gridTemplateColumns: isMobile ? '1fr' : '.85fr 1.15fr' }}>
-          <div style={{ display: 'grid', gap: 24 }}>
-            <div style={{ ...styles.card, padding: 24 }}>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16 }}>
-                <Settings />
-                <div>
-                  <h2 style={{ margin: 0, fontSize: 32 }}>Panel admin</h2>
-                  <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
-                    Administra catálogo, marcas, fit, tallas, stock, clientes y precios por categoría.
-                  </p>
-                </div>
+        <div style={{ display: 'grid', gap: 18 }}>
+          <div style={{ ...styles.card, padding: 24 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 34 }}>Panel admin</h2>
+                <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Productos, clientes, tarifas y pedidos en secciones separadas.</p>
               </div>
-
-              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(3, 1fr)' }}>
-                <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
-                  <p style={{ margin: 0, color: '#6b7280' }}>Productos</p>
-                  <p style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 26 }}>{stats.total}</p>
-                </div>
-                <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
-                  <p style={{ margin: 0, color: '#6b7280' }}>Activos</p>
-                  <p style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 26 }}>{stats.active}</p>
-                </div>
-                <div style={{ background: '#f3f4f6', borderRadius: 20, padding: 16 }}>
-                  <p style={{ margin: 0, color: '#6b7280' }}>Stock</p>
-                  <p style={{ margin: '8px 0 0', fontWeight: 800, fontSize: 26 }}>{stats.stock}</p>
-                </div>
-              </div>
-            </div>
-
-            <div style={{ ...styles.card, padding: 24 }}>
-              <h3 style={{ marginTop: 0, fontSize: 24 }}>Agregar producto</h3>
-              <ProductForm
-                draft={newProductDraft}
-                setDraft={setNewProductDraft}
-                onSave={addProduct}
-                onCancel={() => setNewProductDraft(buildEmptyProduct())}
-                loading={loading}
-                saveLabel="Guardar producto"
-                products={products}
-              />
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>{ADMIN_TABS.map(tabButton)}</div>
             </div>
           </div>
 
-          <div>
-            <div style={{ ...styles.card, padding: 24 }}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  gap: 12,
-                  alignItems: 'center',
-                  marginBottom: 18,
-                  flexWrap: 'wrap',
-                }}
-              >
-                <div>
-                  <h3 style={{ margin: 0, fontSize: 26 }}>Productos registrados</h3>
-                </div>
-
-                <div style={{ position: 'relative', width: isMobile ? '100%' : 280 }}>
-                  <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
-                  <input
-                    style={{ ...styles.input, paddingLeft: 36 }}
-                    value={adminSearch}
-                    onChange={(e) => setAdminSearch(e.target.value)}
-                    placeholder="Buscar en admin"
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gap: 16 }}>
-                {filteredProducts.map((product) => (
-                  <div key={product.id} style={{ border: '1px solid #e5e7eb', borderRadius: 22, padding: 16 }}>
-                    {editingId === product.id && editingDraft ? (
-                      <>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', marginBottom: 16 }}>
-                          <h4 style={{ margin: 0, fontSize: 22 }}>Editando producto</h4>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingId(null)
-                              setEditingDraft(null)
-                            }}
-                            style={styles.buttonSecondary}
-                          >
-                            <X size={16} />
-                          </button>
-                        </div>
-
-                        <ProductForm
-                          draft={editingDraft}
-                          setDraft={setEditingDraft}
-                          onSave={saveEdit}
-                          onCancel={() => {
-                            setEditingId(null)
-                            setEditingDraft(null)
-                          }}
-                          loading={loading}
-                          saveLabel="Guardar cambios"
-                          products={products}
-                        />
-                      </>
-                    ) : (
-                      <>
-                        <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '110px 1fr auto' }}>
-                          <div style={{ borderRadius: 18, overflow: 'hidden', background: '#f3f4f6' }}>
-                            {getCover(product) ? (
-                              <img src={getCover(product)} alt={product.name} style={{ width: '100%', height: 110, objectFit: 'cover' }} />
-                            ) : (
-                              <div style={{ width: '100%', height: 110, display: 'grid', placeItems: 'center' }}>
-                                <ImageIcon size={32} color="#9ca3af" />
-                              </div>
-                            )}
-                          </div>
-
-                          <div>
-                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                              <h4 style={{ margin: 0, fontSize: 22 }}>{product.name}</h4>
-                              <Badge>{product.audience}</Badge>
-                              <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
-                              {product.category === 'Jeans' && product.subcategory ? (
-                                <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge>
-                              ) : null}
-                            </div>
-
-                            <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category}</p>
-
-                            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(4, 1fr)', marginTop: 12 }}>
-                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
-                                <small style={{ color: '#6b7280' }}>Normal</small>
-                                <div style={{ fontWeight: 800 }}>{mxn(product.price)}</div>
-                              </div>
-                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
-                                <small style={{ color: '#6b7280' }}>3+</small>
-                                <div style={{ fontWeight: 800 }}>{mxn(product.price_tier3)}</div>
-                              </div>
-                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
-                                <small style={{ color: '#6b7280' }}>10+</small>
-                                <div style={{ fontWeight: 800 }}>{mxn(product.price_tier10)}</div>
-                              </div>
-                              <div style={{ background: '#f3f4f6', borderRadius: 14, padding: 10 }}>
-                                <small style={{ color: '#6b7280' }}>Especial base</small>
-                                <div style={{ fontWeight: 800 }}>{mxn(product.special_price)}</div>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column', gap: 8 }}>
-                            <button type="button" style={styles.buttonSecondary} onClick={() => startEdit(product)}>
-                              <Pencil size={16} />
-                              Editar
-                            </button>
-
-                            <button type="button" style={styles.buttonSecondary} onClick={() => toggleActive(product.id, !product.active)}>
-                              {product.active ? 'Ocultar' : 'Activar'}
-                            </button>
-
-                            <button type="button" style={styles.buttonSecondary} onClick={() => deleteProduct(product.id)}>
-                              <Trash2 size={16} />
-                              Eliminar
-                            </button>
-                          </div>
-                        </div>
-
-                        <ProductTierPricesEditor
-                          product={product}
-                          priceRows={productTierPrices}
-                          fetchTierPrices={fetchTierPrices}
-                        />
-                      </>
-                    )}
+          {activeTab === 'resumen' ? (
+            <div style={{ display: 'grid', gap: 18 }}>
+              <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)' }}>
+                {[
+                  ['Productos', stats.total],
+                  ['Activos', stats.active],
+                  ['Stock', stats.stock],
+                  ['Clientes', stats.clients],
+                  ['Pedidos activos', stats.orders],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ ...styles.card, padding: 18 }}>
+                    <p style={{ margin: 0, color: '#6b7280', fontWeight: 800 }}>{label}</p>
+                    <p style={{ margin: '8px 0 0', fontWeight: 950, fontSize: 30 }}>{value}</p>
                   </div>
                 ))}
+              </div>
 
-                {filteredProducts.length === 0 ? (
-                  <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 22, textAlign: 'center', color: '#6b7280' }}>
-                    No hay productos con ese criterio.
+              <div style={{ ...styles.card, padding: 24 }}>
+                <h3 style={{ marginTop: 0, fontSize: 24 }}>Acciones rapidas</h3>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button type="button" style={styles.buttonPrimary} onClick={() => { setActiveTab('productos'); setShowProductForm(true) }}>Agregar producto</button>
+                  <button type="button" style={styles.buttonSecondary} onClick={() => setActiveTab('clientes')}>Agregar cliente especial</button>
+                  <button type="button" style={styles.buttonSecondary} onClick={() => setActiveTab('pedidos')}>Revisar pedidos</button>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {activeTab === 'productos' ? (
+            <div style={{ display: 'grid', gap: 18 }}>
+              <div style={{ ...styles.card, padding: 24 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 28 }}>Productos</h3>
+                    <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Filtra por categoria y abre solo el producto que quieres editar.</p>
+                  </div>
+                  <button type="button" style={styles.buttonPrimary} onClick={() => setShowProductForm((value) => !value)}>
+                    <Plus size={18} />
+                    {showProductForm ? 'Cerrar formulario' : 'Nuevo producto'}
+                  </button>
+                </div>
+
+                {showProductForm ? (
+                  <div style={{ marginTop: 18, borderTop: '1px solid #e5e7eb', paddingTop: 18 }}>
+                    <ProductForm draft={newProductDraft} setDraft={setNewProductDraft} onSave={addProduct} onCancel={() => { setNewProductDraft(buildEmptyProduct()); setShowProductForm(false) }} loading={loading} saveLabel="Guardar producto" products={products} />
                   </div>
                 ) : null}
               </div>
-            </div>
 
-            <SpecialClientsAdmin
-              specialClients={specialClients}
-              fetchSpecialClients={fetchSpecialClients}
-            />
-          </div>
+              <div style={{ ...styles.card, padding: 24 }}>
+                <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr 220px 220px' }}>
+                  <div style={{ position: 'relative' }}>
+                    <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
+                    <input style={{ ...styles.input, paddingLeft: 36 }} value={adminSearch} onChange={(e) => setAdminSearch(e.target.value)} placeholder="Buscar producto, marca, fit o modelo" />
+                  </div>
+                  <select style={styles.input} value={audienceFilter} onChange={(e) => setAudienceFilter(e.target.value)}>
+                    {AUDIENCES.map((aud) => <option key={aud} value={aud}>{aud}</option>)}
+                  </select>
+                  <select style={styles.input} value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+                    <option value="Todos">Todas las categorias</option>
+                    {productCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                  <button type="button" style={{ ...styles.buttonSecondary, background: categoryFilter === 'Todos' ? '#111315' : '#fff', color: categoryFilter === 'Todos' ? '#fff' : '#111315' }} onClick={() => setCategoryFilter('Todos')}>
+                    Todos ({products.length})
+                  </button>
+                  {productCategories.map((category) => (
+                    <button key={category} type="button" style={{ ...styles.buttonSecondary, background: categoryFilter === category ? '#111315' : '#fff', color: categoryFilter === category ? '#fff' : '#111315' }} onClick={() => setCategoryFilter(category)}>
+                      {category} ({products.filter((product) => product.category === category).length})
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {groupedProducts.map((group) => (
+                <div key={group.category} style={{ ...styles.card, padding: 24 }}>
+                  <h3 style={{ marginTop: 0, fontSize: 24 }}>{group.category}</h3>
+                  <div style={{ display: 'grid', gap: 14 }}>{group.items.map(renderProductCard)}</div>
+                </div>
+              ))}
+
+              {filteredProducts.length === 0 ? (
+                <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 22, textAlign: 'center', color: '#6b7280' }}>
+                  No hay productos con ese criterio.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {activeTab === 'clientes' ? (
+            <SpecialClientsAdmin specialClients={specialClients} fetchSpecialClients={fetchSpecialClients} />
+          ) : null}
+
+          {activeTab === 'pedidos' ? (
+            <OrdersAdmin orders={orders} fetchOrders={fetchOrders} />
+          ) : null}
         </div>
       </div>
     </section>
@@ -3190,6 +4677,7 @@ export default function App() {
   const isMobile = useIsMobile()
   const [products, setProducts] = useState([])
   const [specialClients, setSpecialClients] = useState([])
+  const [orders, setOrders] = useState([])
   const [productTierPrices, setProductTierPrices] = useState([])
   const [loading, setLoading] = useState(false)
 
@@ -3251,10 +4739,21 @@ export default function App() {
     setProductTierPrices(data || [])
   }
 
+  async function fetchOrders() {
+    const { data, error } = await supabase.from('orders').select('*').order('created_at', { ascending: false })
+    if (error) {
+      console.warn('No se pudieron leer pedidos:', error.message)
+      setOrders([])
+      return
+    }
+    setOrders(data || [])
+  }
+
   useEffect(() => {
     fetchProducts()
     fetchSpecialClients()
     fetchTierPrices()
+    fetchOrders()
   }, [])
 
   useEffect(() => {
@@ -3267,6 +4766,7 @@ export default function App() {
         const parsed = JSON.parse(specialSaved)
         setSpecialClientSession(parsed)
       } catch {
+        // Ignore invalid stored client sessions.
       }
     }
   }, [])
@@ -3296,7 +4796,7 @@ export default function App() {
     if (specialClientSession?.active) {
       const row = findTierPrice(product.id, specialClientSession.client_tier)
       if (row) return Number(row.price || 0)
-      return Number(product.special_price || product.price || 0)
+      return Number(product.price_tier10 || product.price_tier3 || product.price || 0)
     }
 
     return Number(product[tier.key] || product.price || 0)
@@ -3304,12 +4804,12 @@ export default function App() {
 
   const addToCart = (product) => {
     const selection = selectedConfig[product.id]
-    if (!selection?.size || Number(selection.quantity || 0) <= 0) return
+    if (!selection?.size || Number(selection.quantity || 0) <= 0) return false
 
     const stock = Number(product.stock?.[selection.size] || 0)
     if (Number(selection.quantity || 0) > stock) {
       alert('La cantidad supera el stock disponible.')
-      return
+      return false
     }
 
     setCart((prev) => {
@@ -3335,6 +4835,8 @@ export default function App() {
         quantity: 0,
       },
     }))
+
+    return true
   }
 
   const loginSpecialClient = async (rawCode) => {
@@ -3375,34 +4877,70 @@ export default function App() {
 
   const sendOrder = async () => {
     if (cart.length === 0) {
-      alert('Agrega productos al carrito.')
+      alert('Agrega productos a la bolsa.')
       return
     }
 
     if (!customer.name.trim() || !customer.phone.trim()) {
-      alert('Pon al menos nombre y teléfono.')
+      alert('Pon al menos nombre y telefono.')
       return
     }
 
-    const subtotal = cart.reduce((sum, item) => sum + getCartUnitPrice(item.product) * Number(item.quantity || 0), 0)
+    const phoneDigits = customer.phone.replace(/\D/g, '')
+    if (phoneDigits.length < 10) {
+      alert('Numero de telefono invalido.')
+      return
+    }
+
+    if (customer.delivery === 'envios') {
+      if (!customer.receiver.trim() || !customer.receiver_phone.trim() || !customer.address.trim()) {
+        alert('Completa nombre, telefono y direccion de envio.')
+        return
+      }
+    }
+
+    const subtotal = cart.reduce(
+      (sum, item) => sum + getCartUnitPrice(item.product) * Number(item.quantity || 0),
+      0
+    )
+    const shippingCost = 0
+    const shippingLabel =
+      customer.delivery === 'envios'
+        ? 'Envio por paqueteria'
+        : customer.delivery === 'punto'
+          ? 'Entrega en punto medio'
+          : 'Recoge en sucursal'
+    const totalFinal = subtotal + shippingCost
 
     try {
       setLoading(true)
 
       const specialLabel = specialClientSession?.active
-        ? `Cliente ${specialClientSession.client_tier}`
+        ? 'Cliente ' + specialClientSession.client_tier
         : tier.label
 
-      const noteWithClient = specialClientSession?.active
-        ? `${customer.notes || ''} | Cliente especial: ${specialClientSession.name} (${specialClientSession.client_tier})`
-        : customer.notes || ''
+      const shippingDetails =
+        customer.delivery === 'envios'
+          ? 'Recibe: ' + customer.receiver +
+            ' | Tel: ' + customer.receiver_phone +
+            ' | Direccion: ' + customer.address +
+            ' | Referencia: ' + (customer.reference || '-')
+          : shippingLabel
+
+      const noteParts = [
+        customer.notes || '',
+        'Entrega: ' + shippingDetails,
+        specialClientSession?.active
+          ? 'Cliente especial: ' + specialClientSession.name + ' (' + specialClientSession.client_tier + ')'
+          : '',
+      ].filter(Boolean)
 
       const orderPayload = {
         customer_name: customer.name || '',
-        customer_phone: customer.phone || '',
+        customer_phone: phoneDigits,
         customer_city: customer.city || '',
-        delivery: customer.delivery || '',
-        notes: noteWithClient,
+        delivery: shippingLabel,
+        notes: noteParts.join(' | '),
         items_json: cart.map((item) => ({
           product_id: item.product.id,
           name: item.product.name,
@@ -3420,7 +4958,7 @@ export default function App() {
 
       const { error: orderError } = await supabase.from('orders').insert([orderPayload])
       if (orderError) {
-        alert(`No se pudo guardar el pedido: ${orderError.message}`)
+        alert('No se pudo guardar el pedido: ' + orderError.message)
         setLoading(false)
         return
       }
@@ -3443,7 +4981,7 @@ export default function App() {
           .eq('id', item.product.id)
 
         if (updateError) {
-          alert(`No se pudo actualizar stock de ${product.name}: ${updateError.message}`)
+          alert('Pedido guardado, pero no se pudo actualizar stock de ' + product.name + ': ' + updateError.message)
           setLoading(false)
           return
         }
@@ -3453,34 +4991,53 @@ export default function App() {
         .map((item, idx) => {
           const unit = getCartUnitPrice(item.product)
           const lineTotal = unit * Number(item.quantity || 0)
-          return `${idx + 1}. ${item.product.name}%0A   Talla: ${item.size}%0A   Cantidad: ${item.quantity} pz%0A   Unitario: ${mxn(unit)}%0A   Importe: ${mxn(lineTotal)}`
+          return (
+            (idx + 1) + '. ' + item.product.name + '\n' +
+            '   Talla: ' + item.size + '\n' +
+            '   Cantidad: ' + item.quantity + ' pz\n' +
+            '   Unitario: ' + mxn(unit) + '\n' +
+            '   Importe: ' + mxn(lineTotal)
+          )
         })
-        .join('%0A%0A')
+        .join('\n\n')
 
-      const specialText = specialClientSession?.active
-        ? `%0A*Cliente especial:* ${specialClientSession.name}%0A*Cód.:* ${specialClientSession.client_code}%0A*Categoría:* ${specialClientSession.client_tier}`
+      const shippingText =
+        customer.delivery === 'envios'
+          ? '\nDATOS DE ENVIO\n' +
+            'Recibe: ' + customer.receiver + '\n' +
+            'Telefono: ' + customer.receiver_phone + '\n' +
+            'Direccion: ' + customer.address + '\n' +
+            'Referencia: ' + (customer.reference || '-')
+          : ''
+
+      const clientText = specialClientSession?.active
+        ? '\nCLIENTE ESPECIAL\n' +
+          'Nombre: ' + specialClientSession.name + '\n' +
+          'Codigo: ' + specialClientSession.client_code + '\n' +
+          'Categoria: ' + specialClientSession.client_tier
         : ''
 
       const msg =
-        `🧾 *DENIM CLICK | SOLICITUD DE PEDIDO*%0A%0A` +
-        `━━━━━━━━━━━━━━%0A` +
-        `*Cliente:* ${customer.name}%0A` +
-        `*Teléfono:* ${customer.phone}%0A` +
-        `*Ciudad:* ${customer.city || '-'}%0A` +
-        `*Entrega:* ${customer.delivery || '-'}%0A` +
-        `*Notas:* ${customer.notes || '-'}${specialText}%0A` +
-        `━━━━━━━━━━━━━━%0A%0A` +
-        `*PRODUCTOS*%0A${itemsText}%0A%0A` +
-        `━━━━━━━━━━━━━━%0A` +
-        `*Piezas totales:* ${totalPieces}%0A` +
-        `*Nivel de precio:* ${specialClientSession?.active ? `Cliente ${specialClientSession.client_tier}` : tier.label}%0A` +
-        `*Total a pagar:* ${mxn(subtotal)}%0A` +
-        `━━━━━━━━━━━━━━%0A` +
-        `Quedo atento a confirmación de existencia, pago y entrega.`
+        'PEDIDO DENIM CLICK\n\n' +
+        'Cliente: ' + customer.name + '\n' +
+        'Telefono: ' + customer.phone + '\n' +
+        'Ciudad: ' + (customer.city || '-') + '\n' +
+        'Entrega: ' + shippingLabel +
+        shippingText +
+        clientText +
+        '\n\nPRODUCTOS\n' +
+        itemsText +
+        '\n\nPiezas totales: ' + totalPieces + '\n' +
+        'Nivel de precio: ' + specialLabel + '\n' +
+        'Subtotal: ' + mxn(subtotal) + '\n' +
+        'Total: ' + mxn(totalFinal) + '\n' +
+        'Notas: ' + (customer.notes || '-') + '\n\n' +
+        'Solicito apartado y confirmacion de existencia.'
 
-      const link = `https://wa.me/${WHATSAPP_NUMBER}?text=${msg}`
+      const link = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(msg)
 
       await fetchProducts()
+      await fetchOrders()
       setCart([])
       setCustomer(emptyCustomer)
       setLoading(false)
@@ -3537,6 +5094,7 @@ export default function App() {
           customer={customer}
           setCustomer={setCustomer}
           sendOrder={sendOrder}
+          orderLoading={loading}
           gallery={gallery}
           setGallery={setGallery}
           specialClientSession={specialClientSession}
@@ -3569,7 +5127,7 @@ export default function App() {
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <img src={STORE_LOGO} alt={STORE_NAME} style={{ width: 110, objectFit: 'contain' }} />
+                <DenimClickLogo variant="light" size="sm" />
                 <strong>Admin</strong>
               </div>
 
@@ -3602,6 +5160,8 @@ export default function App() {
             fetchSpecialClients={fetchSpecialClients}
             productTierPrices={productTierPrices}
             fetchTierPrices={fetchTierPrices}
+            orders={orders}
+            fetchOrders={fetchOrders}
           />
         </>
       ) : (
