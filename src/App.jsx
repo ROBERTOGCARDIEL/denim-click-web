@@ -35,6 +35,8 @@ const ADMIN_USERNAME = 'Denim'
 const ADMIN_PASSWORD = 'Denimzoa2026'
 const ADMIN_SESSION_KEY = 'apartados_admin_session_v2'
 const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v2'
+const CART_STORAGE_KEY = 'denimclick_cart_v2'
+const PRODUCT_META_MARKER = '[[DENIM_CLICK_PRODUCT_META]]'
 const WHATSAPP_NUMBER = '525572665573'
 const SUPPORT_WHATSAPP_NUMBER = '525641124995'
 const SOCIAL_LINKS = [
@@ -269,6 +271,95 @@ function totalStock(stock) {
   return Object.values(stock || {}).reduce((sum, n) => sum + Number(n || 0), 0)
 }
 
+function normalizeMetaList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item).trim()).filter(Boolean)
+  if (typeof value === 'string') {
+    return value.split(',').map((item) => item.trim()).filter(Boolean)
+  }
+  return []
+}
+
+function splitProductDescription(rawDescription = '') {
+  const raw = String(rawDescription || '')
+  const markerIndex = raw.indexOf(PRODUCT_META_MARKER)
+
+  if (markerIndex < 0) {
+    return { description: raw.trim(), meta: {} }
+  }
+
+  const description = raw.slice(0, markerIndex).trim()
+  const rawMeta = raw.slice(markerIndex + PRODUCT_META_MARKER.length).trim()
+
+  try {
+    return {
+      description,
+      meta: JSON.parse(rawMeta || '{}') || {},
+    }
+  } catch {
+    return { description, meta: {} }
+  }
+}
+
+function composeProductDescription(product) {
+  const cleanDescription = splitProductDescription(product.description || '').description
+  const meta = {
+    package_pieces: Number(product.package_pieces || 10),
+    package_stock: Number(product.package_stock || 0),
+    package_fit: product.package_fit || '',
+    package_breakdown: product.package_breakdown || '',
+    lengths: normalizeMetaList(product.lengths),
+  }
+
+  const hasMeta =
+    meta.package_stock > 0 ||
+    Boolean(meta.package_fit) ||
+    Boolean(meta.package_breakdown) ||
+    meta.lengths.length > 0 ||
+    meta.package_pieces !== 10
+
+  if (!hasMeta) return cleanDescription
+  return (cleanDescription ? cleanDescription + '\n\n' : '') + PRODUCT_META_MARKER + JSON.stringify(meta)
+}
+
+function getPackagePieces(product) {
+  return Number(product?.package_pieces || 10)
+}
+
+function getPackageUnitPrice(product) {
+  return Number(product?.special_price || product?.price_tier10 || product?.price || 0)
+}
+
+function getCartItemPieces(item) {
+  if (item?.packageMode) {
+    return getPackagePieces(item.product) * Number(item.quantity || 0)
+  }
+  return Number(item?.quantity || 0)
+}
+
+function getCartItemMaxQuantity(item) {
+  if (item?.packageMode) {
+    return Number(item.product?.package_stock || 0)
+  }
+  return Number(item.product?.stock?.[item.size] || 0)
+}
+
+function getCartItemUnitPrice(item, getProductUnitPrice) {
+  if (item?.packageMode) return getPackageUnitPrice(item.product)
+  return getProductUnitPrice(item.product)
+}
+
+function getCartLineTotal(item, getProductUnitPrice) {
+  return getCartItemUnitPrice(item, getProductUnitPrice) * getCartItemPieces(item)
+}
+
+function getCartTotalPieces(cart) {
+  return cart.reduce((sum, item) => sum + getCartItemPieces(item), 0)
+}
+
+function getCartSubtotal(cart, getProductUnitPrice) {
+  return cart.reduce((sum, item) => sum + getCartLineTotal(item, getProductUnitPrice), 0)
+}
+
 function normalizeProduct(row) {
   let images = []
 
@@ -295,11 +386,14 @@ function normalizeProduct(row) {
       ? row.stock_json
       : Object.fromEntries(sizes.map((s) => [s, 0]))
 
+  const parsedDescription = splitProductDescription(row.description || '')
+  const productMeta = parsedDescription.meta || {}
+
   return {
     id: row.id,
     created_at: row.created_at,
     name: row.name || '',
-    description: row.description || '',
+    description: parsedDescription.description,
     category: row.category || 'Jeans',
     subcategory: row.subcategory || '',
     audience: row.audience || 'Hombre',
@@ -318,6 +412,11 @@ function normalizeProduct(row) {
     is_offer: row.is_offer === true,
     sales_count: Number(row.sales_count || 0),
     category_order: Number(row.category_order || 0),
+    package_pieces: Number(productMeta.package_pieces || 10),
+    package_stock: Number(productMeta.package_stock || 0),
+    package_fit: productMeta.package_fit || '',
+    package_breakdown: productMeta.package_breakdown || '',
+    lengths: normalizeMetaList(productMeta.lengths),
   }
 }
 
@@ -325,7 +424,7 @@ function productToDb(product) {
   const stockTotal = totalStock(product.stock)
   return {
     name: product.name,
-    description: product.description,
+    description: composeProductDescription(product),
     category: product.category,
     subcategory: product.subcategory || '',
     audience: product.audience,
@@ -367,6 +466,11 @@ function buildEmptyProduct() {
     is_offer: false,
     sales_count: 0,
     category_order: 0,
+    package_pieces: 10,
+    package_stock: 0,
+    package_fit: '',
+    package_breakdown: '',
+    lengths: [],
     customCategory: '',
     customSubcategory: '',
     customBrand: '',
@@ -933,6 +1037,14 @@ function LoginClientModal({
 }) {
   const [scannerOpen, setScannerOpen] = useState(false)
 
+  const handleLoginValue = async (value) => {
+    const client = await loginSpecialClient(value)
+    if (client) {
+      setScannerOpen(false)
+      onClose()
+    }
+  }
+
   if (!open) return null
 
   return (
@@ -985,7 +1097,7 @@ function LoginClientModal({
               />
 
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <button type="button" style={styles.buttonPrimary} onClick={() => loginSpecialClient(specialCode)}>
+                <button type="button" style={styles.buttonPrimary} onClick={() => handleLoginValue(specialCode)}>
                   <Lock size={16} />
                   Entrar
                 </button>
@@ -1011,7 +1123,7 @@ function LoginClientModal({
       <ScannerModal
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
-        onDetected={(value) => loginSpecialClient(value)}
+        onDetected={(value) => handleLoginValue(value)}
       />
     </>
   )
@@ -1786,31 +1898,74 @@ function ProductCard({
         </p>
 
         {isMobile ? (
-          <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
+          <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
             <p style={{ margin: 0, color: '#6b7280', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>
               Tallas disponibles
             </p>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              {(product.sizes || []).slice(0, 6).map((size) => {
+              {(product.sizes || []).slice(0, 8).map((size) => {
                 const qty = Number(product.stock?.[size] || 0)
+                const selected = activeSize === size
                 return (
-                  <span
+                  <button
                     key={size}
+                    type="button"
+                    onClick={() => qty > 0 && setSize(size)}
+                    disabled={qty <= 0}
                     style={{
-                      border: '1px solid ' + (qty > 0 ? '#d1d5db' : '#e5e7eb'),
+                      border: selected ? '2px solid #111315' : '1px solid ' + (qty > 0 ? '#d1d5db' : '#e5e7eb'),
                       color: qty > 0 ? '#111315' : '#9ca3af',
                       background: qty > 0 ? '#fff' : '#f3f4f6',
                       borderRadius: 999,
-                      padding: '4px 7px',
+                      padding: '5px 8px',
                       fontSize: 11,
                       fontWeight: 800,
+                      cursor: qty > 0 ? 'pointer' : 'not-allowed',
                     }}
                   >
                     {size} · {qty}
-                  </span>
+                  </button>
                 )
               })}
             </div>
+
+            {activeSize ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
+                  <button type="button" onClick={() => setQuantity((current.quantity || 0) - 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}>
+                    <Minus size={14} />
+                  </button>
+                  <input
+                    type="number"
+                    min="0"
+                    max={stockForSelected}
+                    value={current.quantity}
+                    onChange={(event) => setQuantity(event.target.value)}
+                    style={{ width: 42, height: 32, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900 }}
+                  />
+                  <button type="button" onClick={() => setQuantity((current.quantity || 0) + 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}>
+                    <Plus size={14} />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => onAddToCart(product)}
+                  disabled={!activeSize || Number(current.quantity || 0) <= 0}
+                  style={{
+                    ...styles.buttonPrimary,
+                    minHeight: 36,
+                    borderRadius: 999,
+                    padding: '8px 12px',
+                    fontSize: 12,
+                    opacity: !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
+                    cursor: !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Agregar producto
+                </button>
+              </div>
+            ) : null}
           </div>
         ) : (
           <>
@@ -1922,11 +2077,13 @@ function ProductQuickView({
   selectedConfig,
   setSelectedConfig,
   onAddToCart,
+  onAddPackageToCart,
   onClose,
   onOpenGallery,
   specialClientSession,
 }) {
   const [imageIndex, setImageIndex] = useState(0)
+  const [packageQty, setPackageQty] = useState(1)
   const touchStartX = useRef(0)
   const images = product?.images || []
   const current = product ? selectedConfig[product.id] || { size: '', quantity: 0 } : { size: '', quantity: 0 }
@@ -1934,10 +2091,14 @@ function ProductQuickView({
   const stockForSelected = product ? Number(product.stock?.[activeSize] || 0) : 0
   const availableStock = product ? totalStock(product.stock) : 0
   const displayPrice = product ? (specialClientSession?.active && product.special_price ? product.special_price : product.price) : 0
+  const packagePieces = product ? getPackagePieces(product) : 10
+  const packageStock = product ? Number(product.package_stock || 0) : 0
+  const packageUnitPrice = product ? getPackageUnitPrice(product) : 0
 
   useEffect(() => {
     if (!open || !product) return
     setImageIndex(0)
+    setPackageQty(1)
     const firstAvailable = (product.sizes || []).find((size) => Number(product.stock?.[size] || 0) > 0)
     const existing = selectedConfig[product.id]
     if (!existing?.size || Number(product.stock?.[existing.size] || 0) <= 0) {
@@ -1986,6 +2147,16 @@ function ProductQuickView({
     if (added !== false) onClose()
   }
 
+  const setPackageQuantity = (qty) => {
+    const clean = Math.max(1, Math.min(Number(qty || 1), Math.max(1, packageStock)))
+    setPackageQty(clean)
+  }
+
+  const addPackageAndClose = () => {
+    const added = onAddPackageToCart(product, packageQty)
+    if (added !== false) onClose()
+  }
+
   return (
     <div
       style={{
@@ -2008,8 +2179,8 @@ function ProductQuickView({
           maxHeight: isMobile ? '94vh' : '92vh',
           background: '#fff',
           borderRadius: isMobile ? '28px 28px 0 0' : 8,
-          overflow: 'hidden',
-          display: 'grid',
+          overflow: isMobile ? 'auto' : 'hidden',
+          display: isMobile ? 'block' : 'grid',
           gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.06fr) minmax(360px, .94fr)',
           boxShadow: '0 30px 90px rgba(17,19,21,.28)',
         }}
@@ -2018,7 +2189,9 @@ function ProductQuickView({
           style={{
             position: 'relative',
             background: '#eeeae2',
-            minHeight: isMobile ? 360 : 620,
+            minHeight: isMobile ? 330 : 620,
+            height: isMobile ? '56vh' : '100%',
+            maxHeight: isMobile ? 520 : 'none',
             overflow: 'hidden',
             touchAction: 'pan-y',
           }}
@@ -2095,7 +2268,7 @@ function ProductQuickView({
           ) : null}
         </div>
 
-        <div style={{ padding: isMobile ? '22px 18px 18px' : 34, overflowY: 'auto', display: 'grid', gap: 18 }}>
+        <div style={{ padding: isMobile ? '22px 18px 92px' : 34, overflowY: isMobile ? 'visible' : 'auto', display: 'grid', gap: 18 }}>
           <div>
             <p style={{ margin: 0, color: '#9a6b16', fontSize: 12, fontWeight: 900, textTransform: 'uppercase' }}>
               {product.brand} · {product.category}
@@ -2106,6 +2279,11 @@ function ProductQuickView({
             <p style={{ margin: '8px 0 0', color: '#6b7280', fontWeight: 700 }}>
               Modelo/Fit: {product.subcategory || product.category}
             </p>
+            {product.lengths?.length ? (
+              <p style={{ margin: '6px 0 0', color: '#6b7280', fontWeight: 700 }}>
+                Largo: {product.lengths.join(', ')}
+              </p>
+            ) : null}
             <p style={{ margin: '14px 0 0', fontSize: 28, fontWeight: 950 }}>
               {mxn(displayPrice)}
               {!specialClientSession?.active && product.price_tier3 < product.price ? (
@@ -2154,43 +2332,48 @@ function ProductQuickView({
           <div style={{ border: '1px solid #e5dfd4', borderRadius: 8, padding: 14, background: '#fbfaf7' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <ShoppingBag size={18} />
-              <p style={{ margin: 0, fontWeight: 950 }}>Compra por paquete</p>
+              <p style={{ margin: 0, fontWeight: 950 }}>Paquete cerrado</p>
             </div>
             <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: 13, lineHeight: 1.45 }}>
-              Elige una talla y arma un paquete rapido. Si no hay stock suficiente, se toma el maximo disponible.
+              {packagePieces} piezas del mismo modelo. No se eligen tallas; se entrega con el entallado configurado.
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 8, marginTop: 12 }}>
-              {[
-                { label: 'Paquete 3 pz', pieces: 3, price: product.price_tier3 },
-                { label: 'Paquete 10 pz', pieces: 10, price: product.special_price || product.price_tier10 },
-              ].map((option) => {
-                const disabled = !activeSize || stockForSelected <= 0
-                const targetPieces = Math.min(option.pieces, stockForSelected)
-
-                return (
-                  <button
-                    key={option.label}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => setQuantity(targetPieces)}
-                    style={{
-                      border: '1px solid #d8d3c8',
-                      background: disabled ? '#f3f4f6' : '#fff',
-                      color: disabled ? '#9ca3af' : '#111315',
-                      borderRadius: 8,
-                      padding: '12px 10px',
-                      textAlign: 'left',
-                      cursor: disabled ? 'not-allowed' : 'pointer',
-                    }}
-                  >
-                    <strong>{option.label}</strong>
-                    <span style={{ display: 'block', marginTop: 4, color: disabled ? '#9ca3af' : '#9a6b16', fontSize: 12, fontWeight: 900 }}>
-                      Desde {mxn(option.price)} c/u
-                    </span>
-                  </button>
-                )
-              })}
+            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', marginTop: 12 }}>
+              <div style={{ background: '#fff', border: '1px solid #e5dfd4', borderRadius: 8, padding: 10 }}>
+                <small style={{ color: '#6b7280', fontWeight: 800 }}>Precio paquete</small>
+                <div style={{ fontWeight: 950 }}>{mxn(packageUnitPrice)} c/u</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e5dfd4', borderRadius: 8, padding: 10 }}>
+                <small style={{ color: '#6b7280', fontWeight: 800 }}>Disponibles</small>
+                <div style={{ fontWeight: 950 }}>{packageStock} paquete{packageStock === 1 ? '' : 's'}</div>
+              </div>
+              <div style={{ background: '#fff', border: '1px solid #e5dfd4', borderRadius: 8, padding: 10 }}>
+                <small style={{ color: '#6b7280', fontWeight: 800 }}>Entallado</small>
+                <div style={{ fontWeight: 950 }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</div>
+              </div>
             </div>
+            {product.package_breakdown ? (
+              <p style={{ margin: '10px 0 0', color: '#374151', fontSize: 13, fontWeight: 800 }}>
+                Corrida: {product.package_breakdown}
+              </p>
+            ) : null}
+            {packageStock > 0 ? (
+              <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
+                  <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ border: 'none', background: '#fff', width: 38, height: 38, cursor: 'pointer' }}>
+                    <Minus size={15} />
+                  </button>
+                  <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ width: 48, height: 38, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900 }} />
+                  <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ border: 'none', background: '#fff', width: 38, height: 38, cursor: 'pointer' }}>
+                    <Plus size={15} />
+                  </button>
+                </div>
+                <button type="button" style={{ ...styles.buttonSecondary, background: '#111315', color: '#fff' }} onClick={addPackageAndClose}>
+                  Agregar paquete cerrado
+                </button>
+              </div>
+            ) : (
+              <p style={{ margin: '10px 0 0', color: '#991b1b', fontWeight: 900 }}>Paquete cerrado agotado.</p>
+            )}
           </div>
 
           <div>
@@ -2243,11 +2426,9 @@ function CartDrawer({
   specialClientSession,
   getCartUnitPrice,
 }) {
-  const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
+  const totalPieces = useMemo(() => getCartTotalPieces(cart), [cart])
 
-  const subtotal = useMemo(() => {
-    return cart.reduce((sum, item) => sum + getCartUnitPrice(item.product) * Number(item.quantity || 0), 0)
-  }, [cart, getCartUnitPrice])
+  const subtotal = useMemo(() => getCartSubtotal(cart, getCartUnitPrice), [cart, getCartUnitPrice])
 
   const progress = specialClientSession?.active
     ? 100
@@ -2294,7 +2475,7 @@ function CartDrawer({
       const next = [...prev]
       const item = next[index]
       if (!item) return prev
-      const max = Number(item.product.stock?.[item.size] || 0)
+      const max = getCartItemMaxQuantity(item)
       const clean = Math.max(0, Math.min(Number(nextQty || 0), max))
       next[index] = { ...item, quantity: clean }
       return next.filter((x) => Number(x.quantity || 0) > 0)
@@ -2414,9 +2595,9 @@ function CartDrawer({
             ) : (
               <div style={{ display: 'grid', gap: 14 }}>
                 {cart.map((item, index) => {
-                  const unit = getCartUnitPrice(item.product)
-                  const lineTotal = unit * Number(item.quantity || 0)
-                  const stock = Number(item.product.stock?.[item.size] || 0)
+                  const unit = getCartItemUnitPrice(item, getCartUnitPrice)
+                  const lineTotal = getCartLineTotal(item, getCartUnitPrice)
+                  const stock = getCartItemMaxQuantity(item)
 
                   return (
                     <article
@@ -2446,7 +2627,14 @@ function CartDrawer({
                             <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: 14 }}>
                               {item.product.brand} · {item.product.category}
                             </p>
-                            <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: 14 }}>Talla {item.size}</p>
+                            <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: 14 }}>
+                              {item.packageMode
+                                ? 'Paquete cerrado: ' + item.quantity + ' paquete(s) x ' + getPackagePieces(item.product) + ' pz'
+                                : 'Talla ' + item.size}
+                            </p>
+                            {item.packageMode && item.product.package_breakdown ? (
+                              <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>Corrida: {item.product.package_breakdown}</p>
+                            ) : null}
                           </div>
                           <strong>{mxn(lineTotal)}</strong>
                         </div>
@@ -2489,7 +2677,7 @@ function CartDrawer({
                           </button>
                         </div>
 
-                        <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: 13 }}>Unitario: {mxn(unit)}</p>
+                        <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: 13 }}>{item.packageMode ? 'Precio por pieza del paquete' : 'Unitario'}: {mxn(unit)}</p>
                       </div>
                     </article>
                   )
@@ -2830,6 +3018,67 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
             </label>
           ))}
         </div>
+      </div>
+
+      <div style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16, background: '#fbfaf7' }}>
+        <p style={{ margin: 0, fontWeight: 900 }}>Paquete cerrado y largos</p>
+        <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>
+          Configura paquetes de 10 o 12 piezas, cantidad disponible, corrida y largos visibles en tienda.
+        </p>
+
+        <div style={{ display: 'grid', gap: 14, gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', marginTop: 14 }}>
+          <label style={{ display: 'grid', gap: 6, color: '#6b7280', fontWeight: 800, fontSize: 13 }}>
+            Piezas por paquete
+            <input
+              style={styles.input}
+              type="number"
+              min="1"
+              value={draft.package_pieces ?? 10}
+              onChange={(e) => setDraft((p) => ({ ...p, package_pieces: Number(e.target.value) }))}
+            />
+          </label>
+
+          <label style={{ display: 'grid', gap: 6, color: '#6b7280', fontWeight: 800, fontSize: 13 }}>
+            Paquetes disponibles
+            <input
+              style={styles.input}
+              type="number"
+              min="0"
+              value={draft.package_stock ?? 0}
+              onChange={(e) => setDraft((p) => ({ ...p, package_stock: Number(e.target.value) }))}
+            />
+          </label>
+
+          <label style={{ display: 'grid', gap: 6, color: '#6b7280', fontWeight: 800, fontSize: 13 }}>
+            Largo
+            <input
+              style={styles.input}
+              value={(draft.lengths || []).join(', ')}
+              onChange={(e) => setDraft((p) => ({ ...p, lengths: normalizeMetaList(e.target.value) }))}
+              placeholder="Ej. 30, 32"
+            />
+          </label>
+
+          <label style={{ display: 'grid', gap: 6, color: '#6b7280', fontWeight: 800, fontSize: 13 }}>
+            Entallado
+            <input
+              style={styles.input}
+              value={draft.package_fit || ''}
+              onChange={(e) => setDraft((p) => ({ ...p, package_fit: e.target.value }))}
+              placeholder="Ej. Slim caballero"
+            />
+          </label>
+        </div>
+
+        <label style={{ display: 'grid', gap: 6, color: '#6b7280', fontWeight: 800, fontSize: 13, marginTop: 14 }}>
+          Corrida del paquete
+          <input
+            style={styles.input}
+            value={draft.package_breakdown || ''}
+            onChange={(e) => setDraft((p) => ({ ...p, package_breakdown: e.target.value }))}
+            placeholder="Ej. 28-1, 30-2, 32-3, 34-2"
+          />
+        </label>
       </div>
 
       <div
@@ -3314,7 +3563,7 @@ function OrdersAdmin({ orders, fetchOrders }) {
 function DenimClickLogo({ variant = 'light', size = 'md' }) {
   const color = variant === 'light' ? '#fff' : '#111315'
   const cottonColor = variant === 'light' ? '#fff' : '#111315'
-  const scale = size === 'sm' ? 0.82 : size === 'lg' ? 1.18 : 1
+  const scale = size === 'xs' ? 0.64 : size === 'sm' ? 0.82 : size === 'lg' ? 1.18 : 1
   const letterStyle = {
     fontSize: Math.round(18 * scale),
     fontWeight: 500,
@@ -3588,6 +3837,7 @@ function StoreView({
   selectedConfig,
   setSelectedConfig,
   addToCart,
+  addPackageToCart,
   cart,
   setCart,
   customer,
@@ -3610,6 +3860,10 @@ function StoreView({
   const [bagOpen, setBagOpen] = useState(false)
   const [quickViewProduct, setQuickViewProduct] = useState(null)
 
+  useEffect(() => {
+    if (specialClientSession?.active) setLoginOpen(false)
+  }, [specialClientSession?.active])
+
   const visibleBrands = uniqueValues([...BRANDS, ...products.map((p) => p.brand)])
   const visibleCategories = getAudienceCategories(storeAudience, customCategories).filter((c) => c !== 'Playera')
   const activeProducts = useMemo(() => products.filter((p) => p.active), [products])
@@ -3617,7 +3871,7 @@ function StoreView({
   const heroProduct = featuredProducts.find((p) => p.is_offer) || featuredProducts[0]
   const offerProduct = activeProducts.find((p) => p.is_offer && getCover(p)) || heroProduct
   const totalAvailable = activeProducts.reduce((sum, product) => sum + totalStock(product.stock), 0)
-  const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
+  const totalPieces = useMemo(() => getCartTotalPieces(cart), [cart])
   
   const firstClientName = specialClientSession?.name
     ? String(specialClientSession.name).trim().split(' ')[0]
@@ -3646,10 +3900,19 @@ function StoreView({
     return list
   }, [products, storeAudience, storeCategory, storeBrand, storeFit, search])
 
-  const subtotalPreview = cart.reduce((sum, item) => {
-    const unit = getCartUnitPrice(item.product)
-    return sum + unit * Number(item.quantity || 0)
-  }, 0)
+  const subtotalPreview = getCartSubtotal(cart, getCartUnitPrice)
+
+  const goHome = () => {
+    setStoreAudience('Todo')
+    setStoreCategory('Todos')
+    setStoreFit('Todos')
+    setStoreBrand('Todas')
+    setSearch('')
+    setOpenMegaMenu(false)
+    setMobileMenuOpen(false)
+    setQuickViewProduct(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   return (
     <>
@@ -3661,16 +3924,19 @@ function StoreView({
           background: '#111315',
           color: '#fff',
           borderBottom: '1px solid rgba(255,255,255,.08)',
+          width: '100%',
+          overflow: 'hidden',
+          boxSizing: 'border-box',
         }}
       >
-        <div style={{ ...styles.container, position: 'relative' }}>
+        <div style={{ ...styles.container, position: 'relative', padding: isMobile ? '0 10px' : styles.container.padding, boxSizing: 'border-box' }}>
           <div
             style={{
               minHeight: isMobile ? 76 : 82,
               display: 'flex',
               justifyContent: 'space-between',
               alignItems: 'center',
-              gap: 14,
+              gap: isMobile ? 8 : 14,
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 12 : 18 }}>
@@ -3688,10 +3954,10 @@ function StoreView({
               <button
                 type="button"
                 aria-label="Ir al inicio"
-                onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                onClick={goHome}
                 style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
               >
-                <DenimClickLogo variant="light" size={isMobile ? 'sm' : 'md'} />
+                <DenimClickLogo variant="light" size={isMobile ? 'xs' : 'md'} />
               </button>
             </div>
 
@@ -3749,8 +4015,8 @@ function StoreView({
                 aria-label="Abrir bolsa de apartados"
                 onClick={() => setBagOpen(true)}
                 style={{
-                  width: isMobile ? 48 : 52,
-                  height: isMobile ? 48 : 52,
+                  width: isMobile ? 44 : 52,
+                  height: isMobile ? 44 : 52,
                   borderRadius: 999,
                   border: '1px solid rgba(255,255,255,.16)',
                   background: '#fff',
@@ -3809,8 +4075,8 @@ function StoreView({
                   aria-label="Ver sesion de cliente"
                   title={isMobile ? 'Cliente activo' : 'Cliente activo: ' + firstClientName}
                   style={{
-                    width: isMobile ? 48 : 52,
-                    height: isMobile ? 48 : 52,
+                    width: isMobile ? 44 : 52,
+                    height: isMobile ? 44 : 52,
                     borderRadius: 999,
                     border: '1px solid rgba(255,255,255,.16)',
                     background: '#f7d38a',
@@ -3830,8 +4096,8 @@ function StoreView({
                   aria-label="Iniciar sesion"
                   title="Iniciar sesion"
                   style={{
-                    width: isMobile ? 48 : 52,
-                    height: isMobile ? 48 : 52,
+                    width: isMobile ? 44 : 52,
+                    height: isMobile ? 44 : 52,
                     borderRadius: 999,
                     border: '1px solid rgba(255,255,255,.16)',
                     background: '#fff',
@@ -4095,6 +4361,7 @@ function StoreView({
         selectedConfig={selectedConfig}
         setSelectedConfig={setSelectedConfig}
         onAddToCart={addToCart}
+        onAddPackageToCart={addPackageToCart}
         onClose={() => setQuickViewProduct(null)}
         onOpenGallery={(prod, imageIndex = 0) =>
           setGallery({
@@ -4448,7 +4715,7 @@ function AdminView({
                 {product.category === 'Jeans' && product.subcategory ? <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge> : null}
                 {product.is_offer ? <Badge bg="#fef3c7" color="#92400e">Oferta</Badge> : null}
               </div>
-              <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category} | Stock {product.stock_total}</p>
+              <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category} | Stock {product.stock_total} | Paquetes {product.package_stock || 0}</p>
 
               <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)', marginTop: 12 }}>
                 {[
@@ -4700,7 +4967,16 @@ export default function App() {
   const [storeFit, setStoreFit] = useState('Todos')
 
   const [selectedConfig, setSelectedConfig] = useState({})
-  const [cart, setCart] = useState([])
+  const [cart, setCart] = useState(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const saved = localStorage.getItem(CART_STORAGE_KEY)
+      const parsed = saved ? JSON.parse(saved) : []
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
   const [customer, setCustomer] = useState(emptyCustomer)
 
   const [gallery, setGallery] = useState({
@@ -4757,6 +5033,14 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    try {
+      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart))
+    } catch {
+      // Ignore storage quota issues.
+    }
+  }, [cart])
+
+  useEffect(() => {
     const saved = localStorage.getItem(ADMIN_SESSION_KEY)
     if (saved === 'true') setIsAdminAuthenticated(true)
 
@@ -4785,7 +5069,7 @@ export default function App() {
     )
   }, [products])
 
-  const totalPieces = useMemo(() => cart.reduce((sum, item) => sum + Number(item.quantity || 0), 0), [cart])
+  const totalPieces = useMemo(() => getCartTotalPieces(cart), [cart])
   const tier = currentTier(totalPieces)
 
   const findTierPrice = (productId, clientTier) => {
@@ -4814,18 +5098,18 @@ export default function App() {
 
     setCart((prev) => {
       const index = prev.findIndex(
-        (item) => item.product.id === product.id && item.size === selection.size
+        (item) => !item.packageMode && item.product.id === product.id && item.size === selection.size
       )
 
       if (index >= 0) {
         const next = [...prev]
         const currentQty = Number(next[index].quantity || 0)
         const newQty = Math.min(stock, currentQty + Number(selection.quantity || 0))
-        next[index] = { ...next[index], quantity: newQty }
+        next[index] = { ...next[index], product, quantity: newQty }
         return next
       }
 
-      return [...prev, { product, size: selection.size, quantity: Number(selection.quantity || 0) }]
+      return [...prev, { product, size: selection.size, quantity: Number(selection.quantity || 0), packageMode: false }]
     })
 
     setSelectedConfig((prev) => ({
@@ -4839,11 +5123,50 @@ export default function App() {
     return true
   }
 
+  const addPackageToCart = (product, quantity = 1) => {
+    const packageStock = Number(product.package_stock || 0)
+    const cleanQty = Math.max(1, Math.min(Number(quantity || 1), packageStock))
+
+    if (packageStock <= 0) {
+      alert('Este producto no tiene paquetes cerrados disponibles.')
+      return false
+    }
+
+    setCart((prev) => {
+      const index = prev.findIndex((item) => item.packageMode && item.product.id === product.id)
+
+      if (index >= 0) {
+        const next = [...prev]
+        const currentQty = Number(next[index].quantity || 0)
+        next[index] = {
+          ...next[index],
+          product,
+          quantity: Math.min(packageStock, currentQty + cleanQty),
+          packagePieces: getPackagePieces(product),
+        }
+        return next
+      }
+
+      return [
+        ...prev,
+        {
+          product,
+          size: 'Paquete cerrado',
+          quantity: cleanQty,
+          packageMode: true,
+          packagePieces: getPackagePieces(product),
+        },
+      ]
+    })
+
+    return true
+  }
+
   const loginSpecialClient = async (rawCode) => {
     const code = String(rawCode || '').trim()
     if (!code) {
-      alert('Escribe o escanea un código.')
-      return
+      alert('Escribe o escanea un codigo.')
+      return false
     }
 
     const { data, error } = await supabase
@@ -4854,20 +5177,20 @@ export default function App() {
       .limit(1)
 
     if (error) {
-      alert(`No se pudo validar código: ${error.message}`)
-      return
+      alert(`No se pudo validar codigo: ${error.message}`)
+      return false
     }
 
     if (!data || !data.length) {
-      alert('Código no encontrado o inactivo.')
-      return
+      alert('Codigo no encontrado o inactivo.')
+      return false
     }
 
     const client = data[0]
     setSpecialClientSession(client)
     localStorage.setItem(SPECIAL_CLIENT_SESSION_KEY, JSON.stringify(client))
     setSpecialCode('')
-    alert(`Sesión iniciada: ${client.name}`)
+    return client
   }
 
   const logoutSpecialClient = () => {
@@ -4899,10 +5222,7 @@ export default function App() {
       }
     }
 
-    const subtotal = cart.reduce(
-      (sum, item) => sum + getCartUnitPrice(item.product) * Number(item.quantity || 0),
-      0
-    )
+    const subtotal = getCartSubtotal(cart, getCartUnitPrice)
     const shippingCost = 0
     const shippingLabel =
       customer.delivery === 'envios'
@@ -4946,8 +5266,11 @@ export default function App() {
           name: item.product.name,
           size: item.size,
           quantity: item.quantity,
-          unit_price: getCartUnitPrice(item.product),
-          total: getCartUnitPrice(item.product) * Number(item.quantity || 0),
+          package_mode: Boolean(item.packageMode),
+          package_pieces: item.packageMode ? getPackagePieces(item.product) : null,
+          pieces: getCartItemPieces(item),
+          unit_price: getCartItemUnitPrice(item, getCartUnitPrice),
+          total: getCartLineTotal(item, getCartUnitPrice),
         })),
         total_pieces: totalPieces,
         subtotal,
@@ -4966,6 +5289,23 @@ export default function App() {
       for (const item of cart) {
         const product = products.find((p) => p.id === item.product.id)
         if (!product) continue
+
+        if (item.packageMode) {
+          const nextPackageStock = Math.max(0, Number(product.package_stock || 0) - Number(item.quantity || 0))
+          const { error: updateError } = await supabase
+            .from('products')
+            .update({
+              description: composeProductDescription({ ...product, package_stock: nextPackageStock }),
+            })
+            .eq('id', item.product.id)
+
+          if (updateError) {
+            alert('Pedido guardado, pero no se pudo actualizar paquete de ' + product.name + ': ' + updateError.message)
+            setLoading(false)
+            return
+          }
+          continue
+        }
 
         const nextStock = {
           ...product.stock,
@@ -4989,12 +5329,19 @@ export default function App() {
 
       const itemsText = cart
         .map((item, idx) => {
-          const unit = getCartUnitPrice(item.product)
-          const lineTotal = unit * Number(item.quantity || 0)
+          const unit = getCartItemUnitPrice(item, getCartUnitPrice)
+          const pieces = getCartItemPieces(item)
+          const lineTotal = getCartLineTotal(item, getCartUnitPrice)
+          const detail = item.packageMode
+            ? '   Paquete cerrado: ' + item.quantity + ' paquete(s) x ' + getPackagePieces(item.product) + ' pz\n' +
+              '   Corrida: ' + (item.product.package_breakdown || item.product.package_fit || 'Por confirmar') + '\n'
+            : '   Talla: ' + item.size + '\n' +
+              '   Cantidad: ' + item.quantity + ' pz\n'
+
           return (
             (idx + 1) + '. ' + item.product.name + '\n' +
-            '   Talla: ' + item.size + '\n' +
-            '   Cantidad: ' + item.quantity + ' pz\n' +
+            detail +
+            '   Piezas: ' + pieces + '\n' +
             '   Unitario: ' + mxn(unit) + '\n' +
             '   Importe: ' + mxn(lineTotal)
           )
@@ -5089,6 +5436,7 @@ export default function App() {
           selectedConfig={selectedConfig}
           setSelectedConfig={setSelectedConfig}
           addToCart={addToCart}
+          addPackageToCart={addPackageToCart}
           cart={cart}
           setCart={setCart}
           customer={customer}
