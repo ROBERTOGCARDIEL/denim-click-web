@@ -36,12 +36,15 @@ const ADMIN_PASSWORD = 'Denimzoa2026'
 const ADMIN_SESSION_KEY = 'apartados_admin_session_v2'
 const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v2'
 const CART_STORAGE_KEY = 'denimclick_cart_v2'
+const PRODUCTS_CACHE_KEY = 'denimclick_products_cache_v3'
+const SPECIAL_PRICE_RULES_STORAGE_KEY = 'denimclick_special_price_rules_v1'
 const PRODUCT_PAGE_SIZE_DESKTOP = 24
 const PRODUCT_PAGE_SIZE_MOBILE = 12
 const NEW_PRODUCT_DAYS = 7
 const LAST_UNITS_FILTER = '__last_units__'
 const PROMO_ROTATE_MS = 5200
 const PRODUCT_META_MARKER = '[[DENIM_CLICK_PRODUCT_META]]'
+const PRODUCT_LIST_COLUMNS = 'id,created_at,name,description,category,subcategory,audience,brand,images,sizes,stock,stock_json,price,price_base,price_tier3,price_tier10,special_price,active,is_new,is_offer,sales_count,category_order'
 const WHATSAPP_NUMBER = '525572665573'
 const SUPPORT_WHATSAPP_NUMBER = '525641124995'
 const SOCIAL_LINKS = [
@@ -69,7 +72,42 @@ const SOCIAL_LINKS = [
 
 
 const AUDIENCES = ['Todo', 'Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta']
-const CLIENT_TIERS = ['Plata', 'Oro', 'Esmeralda', 'Platino', 'Diamante']
+const CLIENT_TIERS = ['Plata', 'Oro', 'Esmeralda', 'Platino', 'Diamante', 'Imperial']
+
+const SPECIAL_PRICE_RULE_PRESETS = [
+  {
+    id: 'levis-jeans',
+    label: 'Levi\'s jeans dama/caballero',
+    brand: 'Levi',
+    audience: 'Hombre,Dama',
+    category: 'Jeans',
+    exclude_text: '',
+    prices: {
+      Plata: 285,
+      Oro: 275,
+      Esmeralda: 265,
+      Platino: 255,
+      Diamante: 245,
+      Imperial: 0,
+    },
+  },
+  {
+    id: 'playeras-corta',
+    label: 'Playeras dama/caballero sin manga larga',
+    brand: 'Todas',
+    audience: 'Hombre,Dama',
+    category: 'Playeras',
+    exclude_text: 'manga larga',
+    prices: {
+      Plata: 175,
+      Oro: 175,
+      Esmeralda: 175,
+      Platino: 159,
+      Diamante: 159,
+      Imperial: 0,
+    },
+  },
+]
 
 const BASE_CATEGORY_MAP = {
   Hombre: ['Jeans', 'Playeras', 'Sudaderas', 'Chamarras', 'Shorts', 'Polo', 'Camisas', 'Suéter'],
@@ -218,6 +256,50 @@ function getDefaultProductPricing(audience, category, current = {}) {
   }
 }
 
+function normalizeRuleText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function productMatchesSpecialRule(product, rule) {
+  if (!product || !rule) return false
+  const audiences = normalizeMetaList(rule.audience || 'Todo')
+  const audienceOk =
+    audiences.length === 0 ||
+    audiences.includes('Todo') ||
+    audiences.some((audience) => normalizeRuleText(audience) === normalizeRuleText(product.audience))
+  const categoryOk = !rule.category || normalizeRuleText(rule.category) === normalizeRuleText(product.category)
+  const brandOk =
+    !rule.brand ||
+    normalizeRuleText(rule.brand) === 'todas' ||
+    normalizeRuleText(rule.brand) === 'todos' ||
+    normalizeRuleText(product.brand).includes(normalizeRuleText(rule.brand))
+  const combinedText = normalizeRuleText(product.name + ' ' + product.category + ' ' + product.subcategory + ' ' + product.brand)
+  const excludeOk = !rule.exclude_text || !combinedText.includes(normalizeRuleText(rule.exclude_text))
+  return audienceOk && categoryOk && brandOk && excludeOk
+}
+
+function getDefaultTierPricesForProduct(product, rules = SPECIAL_PRICE_RULE_PRESETS) {
+  const matchingRule = (rules || []).find((rule) => productMatchesSpecialRule(product, rule))
+  if (matchingRule?.prices) {
+    return Object.fromEntries(CLIENT_TIERS.map((tier) => [tier, Number(matchingRule.prices[tier] || 0)]))
+  }
+  const fallback = Number(product?.price_tier10 || product?.price_tier3 || product?.price || 0)
+  return Object.fromEntries(CLIENT_TIERS.map((tier) => [tier, fallback]))
+}
+
+function getSpecialTierPrice(product, tierName, productTierPrices, rules = SPECIAL_PRICE_RULE_PRESETS) {
+  if (!product || !tierName) return 0
+  const row = (productTierPrices || []).find((item) => String(item.product_id) === String(product.id) && item.client_tier === tierName)
+  if (row && Number(row.price || 0) > 0) return Number(row.price || 0)
+  const defaults = getDefaultTierPricesForProduct(product, rules)
+  return Number(defaults[tierName] || 0)
+}
+
 function getFitsForAudience(products, audience, customFits = [], options = {}) {
   const onlyWithStock = options.onlyWithStock !== false
   const audienceFits = uniqueValues(
@@ -296,6 +378,10 @@ function isOfferCurrentlyActive(meta = {}, row = {}) {
 function getProductBasePrice(product) {
   if (product?.is_offer && Number(product.offer_price || 0) > 0) {
     return Number(product.offer_price || 0)
+  }
+  if (product?.is_offer && Number(product.promo_discount_percent || 0) > 0) {
+    const discount = Math.min(95, Math.max(0, Number(product.promo_discount_percent || 0)))
+    return Math.round(Number(product?.price || 0) * (1 - discount / 100))
   }
   return Number(product?.price || 0)
 }
@@ -378,6 +464,9 @@ function composeProductDescription(product) {
     offer_started_at: product.offer_started_at || '',
     promotion_title: product.promotion_title || '',
     promotion_note: product.promotion_note || '',
+    promo_discount_percent: Number(product.promo_discount_percent || 0),
+    promo_free_shipping: product.promo_free_shipping === true,
+    promo_terms: product.promo_terms || '',
   }
 
   const hasMeta =
@@ -391,7 +480,10 @@ function composeProductDescription(product) {
     meta.offer_forever === true ||
     Boolean(meta.offer_started_at) ||
     Boolean(meta.promotion_title) ||
-    Boolean(meta.promotion_note)
+    Boolean(meta.promotion_note) ||
+    meta.promo_discount_percent > 0 ||
+    meta.promo_free_shipping === true ||
+    Boolean(meta.promo_terms)
 
   if (!hasMeta) return cleanDescription
   return (cleanDescription ? cleanDescription + '\n\n' : '') + PRODUCT_META_MARKER + JSON.stringify(meta)
@@ -487,6 +579,9 @@ function normalizeProduct(row) {
     offer_started_at: productMeta.offer_started_at || row.created_at || '',
     promotion_title: productMeta.promotion_title || '',
     promotion_note: productMeta.promotion_note || '',
+    promo_discount_percent: Number(productMeta.promo_discount_percent || 0),
+    promo_free_shipping: productMeta.promo_free_shipping === true,
+    promo_terms: productMeta.promo_terms || '',
     price_tier3: Number(row.price_tier3 ?? row.price_base ?? row.price ?? 0),
     price_tier10: Number(row.price_tier10 ?? row.price_base ?? row.price ?? 0),
     special_price: Number(row.special_price ?? 0),
@@ -558,6 +653,9 @@ function buildEmptyProduct() {
     offer_started_at: '',
     promotion_title: '',
     promotion_note: '',
+    promo_discount_percent: 0,
+    promo_free_shipping: false,
+    promo_terms: '',
     sales_count: 0,
     category_order: 0,
     package_pieces: 10,
@@ -739,6 +837,7 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
   useEffect(() => {
     if (open) setZoomed(false)
   }, [open, product?.id, imageIndex])
+
 
   if (!open || !product) return null
   const images = product.images || []
@@ -1979,13 +2078,14 @@ function ProductCard({
   specialClientSession,
   totalPieces,
   isMobile,
+  getCartUnitPrice,
 }) {
   const current = selectedConfig[product.id] || { size: '', quantity: 0 }
   const activeSize = current.size
   const stockForSelected = Number(product.stock?.[activeSize] || 0)
   const availableStock = totalStock(product.stock)
   const specialPriceUnlocked = specialClientSession?.active && (specialClientSession.client_tier !== 'Plata' || Number(totalPieces || 0) >= 10)
-  const displayPrice = specialPriceUnlocked && product.special_price ? product.special_price : getProductBasePrice(product)
+  const displayPrice = specialPriceUnlocked ? Number(getCartUnitPrice?.(product) || getProductBasePrice(product)) : getProductBasePrice(product)
 
   const setSize = (size) => {
     const available = Number(product.stock?.[size] || 0)
@@ -2268,17 +2368,20 @@ function ProductQuickView({
   onOpenGallery,
   specialClientSession,
   totalPieces,
+  getCartUnitPrice,
 }) {
   const [imageIndex, setImageIndex] = useState(0)
   const [packageQty, setPackageQty] = useState(1)
   const touchStartX = useRef(0)
+  const detailPanelRef = useRef(null)
+  const autoScrollRef = useRef(null)
   const images = product?.images || []
   const current = product ? selectedConfig[product.id] || { size: '', quantity: 0 } : { size: '', quantity: 0 }
   const activeSize = current.size
   const stockForSelected = product ? Number(product.stock?.[activeSize] || 0) : 0
   const availableStock = product ? totalStock(product.stock) : 0
   const specialPriceUnlocked = specialClientSession?.active && (specialClientSession.client_tier !== 'Plata' || Number(totalPieces || 0) >= 10)
-  const displayPrice = product ? (specialPriceUnlocked && product.special_price ? product.special_price : getProductBasePrice(product)) : 0
+  const displayPrice = product ? (specialPriceUnlocked ? Number(getCartUnitPrice?.(product) || getProductBasePrice(product)) : getProductBasePrice(product)) : 0
   const packagePieces = product ? getPackagePieces(product) : 10
   const packageStock = product ? Number(product.package_stock || 0) : 0
   const packageUnitPrice = product ? getPackageUnitPrice(product) : 0
@@ -2345,6 +2448,31 @@ function ProductQuickView({
     if (added !== false) onClose()
   }
 
+  const stopAutoScroll = () => {
+    if (autoScrollRef.current) {
+      window.clearInterval(autoScrollRef.current.id)
+      autoScrollRef.current = null
+    }
+  }
+
+  const startAutoScroll = (direction) => {
+    if (isMobile || !detailPanelRef.current) return
+    if (autoScrollRef.current?.direction === direction) return
+    stopAutoScroll()
+    const id = window.setInterval(() => {
+      if (detailPanelRef.current) detailPanelRef.current.scrollTop += direction * 18
+    }, 24)
+    autoScrollRef.current = { id, direction }
+  }
+
+  const handleQuickViewMouseMove = (event) => {
+    if (isMobile || !detailPanelRef.current) return
+    const rect = event.currentTarget.getBoundingClientRect()
+    if (event.clientY > rect.bottom - 82) startAutoScroll(1)
+    else if (event.clientY < rect.top + 82) startAutoScroll(-1)
+    else stopAutoScroll()
+  }
+
   return (
     <div
       style={{
@@ -2362,6 +2490,13 @@ function ProductQuickView({
       <section
         aria-label="Detalle rapido de producto"
         onClick={(event) => event.stopPropagation()}
+        onMouseMove={handleQuickViewMouseMove}
+        onMouseLeave={stopAutoScroll}
+        onWheel={(event) => {
+          if (!isMobile && detailPanelRef.current && !detailPanelRef.current.contains(event.target)) {
+            detailPanelRef.current.scrollTop += event.deltaY
+          }
+        }}
         style={{
           width: isMobile ? '100%' : 'min(1120px, 96vw)',
           maxHeight: isMobile ? '94vh' : '92vh',
@@ -2456,7 +2591,7 @@ function ProductQuickView({
           ) : null}
         </div>
 
-        <div style={{ padding: isMobile ? '22px 18px 92px' : 34, overflowY: isMobile ? 'visible' : 'auto', display: 'grid', gap: 18 }}>
+        <div ref={detailPanelRef} style={{ padding: isMobile ? '22px 18px 92px' : 34, overflowY: isMobile ? 'visible' : 'auto', maxHeight: isMobile ? 'none' : '92vh', overscrollBehavior: 'contain', display: 'grid', gap: 18 }}>
           <div>
             <p style={{ margin: 0, color: '#9a6b16', fontSize: 12, fontWeight: 900, textTransform: 'uppercase' }}>
               {product.brand} · {product.category}
@@ -3029,7 +3164,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
     setDraft((prev) => ({
       ...prev,
       category,
-      subcategory: category === 'Jeans' ? getFitsForAudience(products, prev.audience, customFits, { onlyWithStock: false })[0] || prev.subcategory || 'Straight' : '',
+      subcategory: category === 'Jeans' ? getFitsForAudience(products, prev.audience, customFits, { onlyWithStock: false })[0] || prev.subcategory || 'Straight' : prev.subcategory || '',
       ...nextPricing,
     }))
   }
@@ -3113,8 +3248,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
         />
       </div>
 
-      {draft.category === 'Jeans' && (
-        <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
+      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
           <div>
             <select
               style={styles.input}
@@ -3126,7 +3260,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
               ))}
             </select>
             <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: 12 }}>
-              Los fits se muestran por genero segun los productos activos de ese genero.
+              Puedes seleccionar o crear modelo/fit para cualquier producto.
             </p>
           </div>
 
@@ -3137,7 +3271,6 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
             onChange={(e) => setDraft((p) => ({ ...p, customSubcategory: e.target.value }))}
           />
         </div>
-      )}
 
       <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
         <select
@@ -3366,10 +3499,14 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
           <div style={{ fontWeight: 900 }}>
             Configura la oferta. Si no marcas "oferta permanente", se desactiva sola al cumplir los dias.
           </div>
-          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr' }}>
+          <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)' }}>
             <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
               Precio oferta
               <input style={styles.input} type="number" value={draft.offer_price || ''} onChange={(e) => setDraft((p) => ({ ...p, offer_price: Number(e.target.value) }))} />
+            </label>
+            <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
+              % descuento
+              <input style={styles.input} type="number" min="0" max="95" value={draft.promo_discount_percent || 0} onChange={(e) => setDraft((p) => ({ ...p, promo_discount_percent: Number(e.target.value) }))} />
             </label>
             <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
               Dias de duracion
@@ -3380,8 +3517,12 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
               Oferta permanente
             </label>
           </div>
-          <input style={styles.input} placeholder="Titulo de promocion opcional" value={draft.promotion_title || ''} onChange={(e) => setDraft((p) => ({ ...p, promotion_title: e.target.value }))} />
-          <textarea style={{ ...styles.textarea, minHeight: 76 }} placeholder="Condiciones o nota de promocion opcional" value={draft.promotion_note || ''} onChange={(e) => setDraft((p) => ({ ...p, promotion_note: e.target.value }))} />
+          <label style={{ display: 'flex', gap: 10, alignItems: 'center', fontWeight: 800 }}>
+            <input type="checkbox" checked={draft.promo_free_shipping === true} onChange={(e) => setDraft((p) => ({ ...p, promo_free_shipping: e.target.checked }))} />
+            Promocion de envio gratis
+          </label>
+          <input style={styles.input} placeholder="Titulo de promocion" value={draft.promotion_title || ''} onChange={(e) => setDraft((p) => ({ ...p, promotion_title: e.target.value }))} />
+          <textarea style={{ ...styles.textarea, minHeight: 76 }} placeholder="Terminos y condiciones de la promocion" value={draft.promo_terms || draft.promotion_note || ''} onChange={(e) => setDraft((p) => ({ ...p, promo_terms: e.target.value, promotion_note: e.target.value }))} />
         </div>
       ) : null}
 
@@ -3445,7 +3586,7 @@ function ProductTierPricesEditor({ product, priceRows, fetchTierPrices }) {
     <div style={{ marginTop: 16, borderTop: '1px solid #e5e7eb', paddingTop: 16 }}>
       <p style={{ marginTop: 0, fontWeight: 900, fontSize: 18 }}>Tarifas para clientes especiales</p>
 
-      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)' }}>
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(6, 1fr)' }}>
         {CLIENT_TIERS.map((tier) => (
           <label key={tier} style={{ background: '#f8fafc', borderRadius: 14, padding: 12, display: 'grid', gap: 8, fontWeight: 800 }}>
             {tier}
@@ -3464,10 +3605,11 @@ function ProductTierPricesEditor({ product, priceRows, fetchTierPrices }) {
   )
 }
 
-function SpecialPricingAdmin({ products, productTierPrices, fetchTierPrices }) {
+function SpecialPricingAdmin({ products, productTierPrices, fetchTierPrices, specialPriceRules, setSpecialPriceRules }) {
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState('')
+  const [savingRule, setSavingRule] = useState(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -3483,45 +3625,289 @@ function SpecialPricingAdmin({ products, productTierPrices, fetchTierPrices }) {
     if (!selectedId && filtered[0]) setSelectedId(filtered[0].id)
   }, [filtered, selectedId])
 
+  const updateRule = (index, key, value) => {
+    setSpecialPriceRules((prev) => prev.map((rule, idx) => (idx === index ? { ...rule, [key]: value } : rule)))
+  }
+
+  const updateRulePrice = (index, tier, value) => {
+    setSpecialPriceRules((prev) =>
+      prev.map((rule, idx) =>
+        idx === index
+          ? { ...rule, prices: { ...(rule.prices || {}), [tier]: Number(value) } }
+          : rule
+      )
+    )
+  }
+
+  const addRule = () => {
+    setSpecialPriceRules((prev) => [
+      ...prev,
+      {
+        id: 'regla-' + Date.now(),
+        label: 'Nueva regla',
+        brand: 'Todas',
+        audience: 'Hombre,Dama',
+        category: 'Jeans',
+        exclude_text: '',
+        prices: Object.fromEntries(CLIENT_TIERS.map((tier) => [tier, 0])),
+      },
+    ])
+  }
+
+  const applyRule = async (rule, index) => {
+    const matchingProducts = products.filter((product) => productMatchesSpecialRule(product, rule))
+    if (!matchingProducts.length) {
+      alert('No hay productos que coincidan con esta regla.')
+      return
+    }
+
+    setSavingRule(index)
+    for (const product of matchingProducts) {
+      for (const tier of CLIENT_TIERS) {
+        const value = Number(rule.prices?.[tier] || 0)
+        const existing = productTierPrices.find((row) => String(row.product_id) === String(product.id) && row.client_tier === tier)
+        if (existing) {
+          const { error } = await supabase.from('product_customer_prices').update({ price: value }).eq('id', existing.id)
+          if (error) {
+            setSavingRule(null)
+            alert('No se pudo actualizar ' + product.name + ' / ' + tier + ': ' + error.message)
+            return
+          }
+        } else {
+          const { error } = await supabase.from('product_customer_prices').insert([{ product_id: product.id, client_tier: tier, price: value }])
+          if (error) {
+            setSavingRule(null)
+            alert('No se pudo crear ' + product.name + ' / ' + tier + ': ' + error.message)
+            return
+          }
+        }
+      }
+    }
+
+    await fetchTierPrices()
+    setSavingRule(null)
+    alert('Regla aplicada a ' + matchingProducts.length + ' producto(s).')
+  }
+
   return (
-    <div style={{ ...styles.card, padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div>
-          <h3 style={{ margin: 0, fontSize: 28 }}>Tarifas especiales por cliente</h3>
-          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
-            Plata se activa al completar 10 piezas. Oro, Esmeralda, Platino y Diamante aplican desde 1 pieza.
-          </p>
-        </div>
-        <button type="button" style={styles.buttonSecondary} onClick={fetchTierPrices}>Actualizar tarifas</button>
-      </div>
-
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr 320px', marginTop: 18 }}>
-        <input style={styles.input} placeholder="Buscar producto para editar tarifa" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select style={styles.input} value={selectedProduct?.id || ''} onChange={(e) => setSelectedId(e.target.value)}>
-          {filtered.map((product) => (
-            <option key={product.id} value={product.id}>{product.name}</option>
-          ))}
-        </select>
-      </div>
-
-      {selectedProduct ? (
-        <div style={{ marginTop: 18, border: '1px solid #e5e7eb', borderRadius: 18, padding: 16 }}>
-          <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-            <div style={{ width: 72, height: 82, borderRadius: 12, overflow: 'hidden', background: '#f3f4f6' }}>
-              {getCover(selectedProduct) ? <img src={getCover(selectedProduct)} alt={selectedProduct.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : null}
-            </div>
-            <div>
-              <h4 style={{ margin: 0, fontSize: 22 }}>{selectedProduct.name}</h4>
-              <p style={{ margin: '6px 0 0', color: '#6b7280' }}>{selectedProduct.brand} · {selectedProduct.category}</p>
-            </div>
+    <div style={{ display: 'grid', gap: 18 }}>
+      <div style={{ ...styles.card, padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 28 }}>Reglas de tarifas especiales</h3>
+            <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+              Configura precios por marca y tipo de producto. Plata se activa al completar 10 piezas; las demas categorias aplican desde 1 pieza.
+            </p>
           </div>
-          <ProductTierPricesEditor product={selectedProduct} priceRows={productTierPrices} fetchTierPrices={fetchTierPrices} />
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <button type="button" style={styles.buttonSecondary} onClick={() => setSpecialPriceRules(SPECIAL_PRICE_RULE_PRESETS)}>Restaurar presets</button>
+            <button type="button" style={styles.buttonPrimary} onClick={addRule}><Plus size={16} />Nueva regla</button>
+          </div>
         </div>
-      ) : (
-        <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 22, color: '#6b7280', textAlign: 'center', marginTop: 18 }}>
-          No hay productos activos para configurar.
+
+        <div style={{ display: 'grid', gap: 14, marginTop: 18 }}>
+          {(specialPriceRules || []).map((rule, index) => {
+            const matches = products.filter((product) => productMatchesSpecialRule(product, rule)).length
+            return (
+              <div key={rule.id || index} style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16, background: '#fbfaf7' }}>
+                <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1.2fr .7fr .8fr .8fr .8fr', alignItems: 'end' }}>
+                  <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
+                    Nombre de regla
+                    <input style={styles.input} value={rule.label || ''} onChange={(event) => updateRule(index, 'label', event.target.value)} />
+                  </label>
+                  <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
+                    Marca
+                    <input style={styles.input} value={rule.brand || ''} onChange={(event) => updateRule(index, 'brand', event.target.value)} placeholder="Todas o Levi" />
+                  </label>
+                  <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
+                    Genero
+                    <input style={styles.input} value={rule.audience || ''} onChange={(event) => updateRule(index, 'audience', event.target.value)} placeholder="Hombre,Dama" />
+                  </label>
+                  <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
+                    Tipo
+                    <input style={styles.input} value={rule.category || ''} onChange={(event) => updateRule(index, 'category', event.target.value)} placeholder="Jeans" />
+                  </label>
+                  <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
+                    Excluir texto
+                    <input style={styles.input} value={rule.exclude_text || ''} onChange={(event) => updateRule(index, 'exclude_text', event.target.value)} placeholder="manga larga" />
+                  </label>
+                </div>
+
+                <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(6, 1fr)', marginTop: 12 }}>
+                  {CLIENT_TIERS.map((tier) => (
+                    <label key={tier} style={{ display: 'grid', gap: 6, fontWeight: 800, color: '#6b7280', fontSize: 13 }}>
+                      {tier}
+                      <input style={styles.input} type="number" value={rule.prices?.[tier] || 0} onChange={(event) => updateRulePrice(index, tier, event.target.value)} />
+                    </label>
+                  ))}
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginTop: 14 }}>
+                  <Badge bg="#eff6ff" color="#1d4ed8">{matches} productos coinciden</Badge>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      style={styles.buttonSecondary}
+                      onClick={() => setSpecialPriceRules((prev) => prev.filter((_, idx) => idx !== index))}
+                    >
+                      Eliminar regla
+                    </button>
+                    <button type="button" style={styles.buttonPrimary} disabled={savingRule === index} onClick={() => applyRule(rule, index)}>
+                      <Save size={16} />
+                      {savingRule === index ? 'Aplicando...' : 'Aplicar a productos'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
-      )}
+      </div>
+
+      <div style={{ ...styles.card, padding: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 24 }}>Ajuste manual por producto</h3>
+            <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Usalo solo cuando un producto necesite un precio diferente a la regla.</p>
+          </div>
+          <button type="button" style={styles.buttonSecondary} onClick={fetchTierPrices}>Actualizar tarifas</button>
+        </div>
+
+        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr 320px', marginTop: 18 }}>
+          <input style={styles.input} placeholder="Buscar producto para editar tarifa" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <select style={styles.input} value={selectedProduct?.id || ''} onChange={(e) => setSelectedId(e.target.value)}>
+            {filtered.map((product) => (
+              <option key={product.id} value={product.id}>{product.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {selectedProduct ? (
+          <div style={{ marginTop: 18, border: '1px solid #e5e7eb', borderRadius: 18, padding: 16 }}>
+            <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+              <div style={{ width: 72, height: 82, borderRadius: 12, overflow: 'hidden', background: '#f3f4f6' }}>
+                {getCover(selectedProduct) ? <img src={getCover(selectedProduct)} alt={selectedProduct.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : null}
+              </div>
+              <div>
+                <h4 style={{ margin: 0, fontSize: 22 }}>{selectedProduct.name}</h4>
+                <p style={{ margin: '6px 0 0', color: '#6b7280' }}>{selectedProduct.brand} · {selectedProduct.category}</p>
+              </div>
+            </div>
+            <ProductTierPricesEditor product={selectedProduct} priceRows={productTierPrices} fetchTierPrices={fetchTierPrices} />
+          </div>
+        ) : (
+          <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 22, color: '#6b7280', textAlign: 'center', marginTop: 18 }}>
+            No hay productos activos para configurar.
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function PromotionProductEditor({ product, fetchProducts }) {
+  const isMobile = useIsMobile()
+  const [draft, setDraft] = useState({
+    is_offer: product.is_offer === true,
+    offer_price: product.offer_price || 0,
+    promo_discount_percent: product.promo_discount_percent || 0,
+    promo_free_shipping: product.promo_free_shipping === true,
+    offer_duration_days: product.offer_duration_days || 0,
+    offer_forever: product.offer_forever !== false,
+    promotion_title: product.promotion_title || '',
+    promotion_note: product.promotion_note || '',
+    promo_terms: product.promo_terms || '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setDraft({
+      is_offer: product.is_offer === true,
+      offer_price: product.offer_price || 0,
+      promo_discount_percent: product.promo_discount_percent || 0,
+      promo_free_shipping: product.promo_free_shipping === true,
+      offer_duration_days: product.offer_duration_days || 0,
+      offer_forever: product.offer_forever !== false,
+      promotion_title: product.promotion_title || '',
+      promotion_note: product.promotion_note || '',
+      promo_terms: product.promo_terms || '',
+    })
+  }, [product])
+
+  const savePromotion = async () => {
+    setSaving(true)
+    const nextProduct = {
+      ...product,
+      ...draft,
+      promotion_note: draft.promo_terms || draft.promotion_note || '',
+      offer_started_at: draft.is_offer ? product.offer_started_at || new Date().toISOString() : product.offer_started_at,
+    }
+    const { error } = await supabase.from('products').update(productToDb(nextProduct)).eq('id', product.id)
+    setSaving(false)
+    if (error) {
+      alert('No se pudo guardar promocion: ' + error.message)
+      return
+    }
+    await fetchProducts()
+  }
+
+  return (
+    <div style={{ border: '1px solid #e5e7eb', borderRadius: 16, padding: 14, background: '#fff' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '82px 1fr' : '92px 1fr auto', gap: 12, alignItems: 'center' }}>
+        <div style={{ width: 82, height: 92, borderRadius: 12, overflow: 'hidden', background: '#f3f4f6' }}>
+          {getCover(product) ? <img src={getCover(product)} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : null}
+        </div>
+        <div>
+          <strong>{product.name}</strong>
+          <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>{product.brand} · {product.category}</p>
+          {draft.is_offer ? <Badge bg="#fef3c7" color="#92400e">Activa</Badge> : null}
+          {draft.promo_free_shipping ? <Badge bg="#ecfdf5" color="#047857">Envio gratis</Badge> : null}
+        </div>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 900 }}>
+          <input type="checkbox" checked={draft.is_offer} onChange={(event) => setDraft((prev) => ({ ...prev, is_offer: event.target.checked }))} />
+          Promocion activa
+        </label>
+      </div>
+
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr' : '1fr 120px 120px 140px', marginTop: 12 }}>
+        <input style={styles.input} placeholder="Nombre de la promocion" value={draft.promotion_title} onChange={(event) => setDraft((prev) => ({ ...prev, promotion_title: event.target.value }))} />
+        <input style={styles.input} type="number" placeholder="Precio" value={draft.offer_price || ''} onChange={(event) => setDraft((prev) => ({ ...prev, offer_price: Number(event.target.value) }))} />
+        <input style={styles.input} type="number" placeholder="% desc." value={draft.promo_discount_percent || 0} onChange={(event) => setDraft((prev) => ({ ...prev, promo_discount_percent: Number(event.target.value) }))} />
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 800 }}>
+          <input type="checkbox" checked={draft.promo_free_shipping} onChange={(event) => setDraft((prev) => ({ ...prev, promo_free_shipping: event.target.checked }))} />
+          Envio gratis
+        </label>
+      </div>
+
+      <div style={{ display: 'grid', gap: 10, gridTemplateColumns: isMobile ? '1fr' : '140px 1fr', marginTop: 10 }}>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 800 }}>
+          <input type="checkbox" checked={draft.offer_forever} onChange={(event) => setDraft((prev) => ({ ...prev, offer_forever: event.target.checked }))} />
+          Sin vencimiento
+        </label>
+        <input
+          style={styles.input}
+          type="number"
+          min="0"
+          disabled={draft.offer_forever}
+          placeholder="Dias de duracion"
+          value={draft.offer_duration_days || 0}
+          onChange={(event) => setDraft((prev) => ({ ...prev, offer_duration_days: Number(event.target.value), offer_forever: false }))}
+        />
+      </div>
+
+      <textarea
+        style={{ ...styles.textarea, minHeight: 86, marginTop: 10 }}
+        placeholder="Terminos y condiciones de la promocion"
+        value={draft.promo_terms || draft.promotion_note}
+        onChange={(event) => setDraft((prev) => ({ ...prev, promo_terms: event.target.value, promotion_note: event.target.value }))}
+      />
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+        <button type="button" style={styles.buttonPrimary} disabled={saving} onClick={savePromotion}>
+          <Save size={16} />
+          {saving ? 'Guardando...' : 'Guardar promocion'}
+        </button>
+      </div>
     </div>
   )
 }
@@ -3529,55 +3915,46 @@ function SpecialPricingAdmin({ products, productTierPrices, fetchTierPrices }) {
 function PromotionsAdmin({ products, fetchProducts }) {
   const isMobile = useIsMobile()
   const [search, setSearch] = useState('')
-  const [savingId, setSavingId] = useState(null)
+  const [mode, setMode] = useState('todos')
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return products.filter((product) => !q || (product.name + ' ' + product.brand + ' ' + product.category).toLowerCase().includes(q))
-  }, [products, search])
-
-  const toggleOffer = async (product) => {
-    setSavingId(product.id)
-    const next = !product.is_offer
-    const payload = productToDb({ ...product, is_offer: next, offer_started_at: next ? product.offer_started_at || new Date().toISOString() : product.offer_started_at })
-    const { error } = await supabase.from('products').update(payload).eq('id', product.id)
-    setSavingId(null)
-    if (error) {
-      alert('No se pudo actualizar promocion: ' + error.message)
-      return
-    }
-    await fetchProducts()
-  }
+    return products
+      .filter((product) => mode === 'todos' || product.is_offer === true)
+      .filter((product) => !q || (product.name + ' ' + product.brand + ' ' + product.category + ' ' + product.subcategory).toLowerCase().includes(q))
+  }, [products, search, mode])
 
   return (
     <div style={{ ...styles.card, padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: 28 }}>Promociones activas</h3>
-          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Activa productos para que aparezcan en el carrusel de promocion de la pantalla principal. Edita foto, dias y precio desde el producto.</p>
+          <h3 style={{ margin: 0, fontSize: 28 }}>Creador de promociones</h3>
+          <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+            Activa promociones por producto, define precio especial, porcentaje, envio gratis, vigencia y terminos.
+          </p>
         </div>
         <Badge bg="#fef3c7" color="#92400e">{products.filter((product) => product.is_offer).length} activas</Badge>
       </div>
 
-      <input style={{ ...styles.input, marginTop: 18 }} placeholder="Buscar producto para promocionar" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1fr 220px', marginTop: 18 }}>
+        <input style={styles.input} placeholder="Buscar producto para promocionar" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <select style={styles.input} value={mode} onChange={(event) => setMode(event.target.value)}>
+          <option value="todos">Todos los productos</option>
+          <option value="activas">Solo promociones activas</option>
+        </select>
+      </div>
 
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', marginTop: 18 }}>
+      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: '1fr', marginTop: 18 }}>
         {filtered.map((product) => (
-          <div key={product.id} style={{ border: '1px solid #e5e7eb', borderRadius: 16, padding: 14, display: 'grid', gridTemplateColumns: '82px 1fr auto', gap: 12, alignItems: 'center' }}>
-            <div style={{ width: 82, height: 92, borderRadius: 12, overflow: 'hidden', background: '#f3f4f6' }}>
-              {getCover(product) ? <img src={getCover(product)} alt={product.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : null}
-            </div>
-            <div>
-              <strong>{product.name}</strong>
-              <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>{product.promotion_title || product.brand + ' · ' + product.category}</p>
-              {product.is_offer ? <Badge bg="#fef3c7" color="#92400e">Activa</Badge> : null}
-            </div>
-            <button type="button" style={styles.buttonSecondary} disabled={savingId === product.id} onClick={() => toggleOffer(product)}>
-              {product.is_offer ? 'Quitar' : 'Activar'}
-            </button>
-          </div>
+          <PromotionProductEditor key={product.id} product={product} fetchProducts={fetchProducts} />
         ))}
       </div>
+
+      {filtered.length === 0 ? (
+        <div style={{ border: '1px dashed #d1d5db', borderRadius: 18, padding: 22, color: '#6b7280', textAlign: 'center', marginTop: 18 }}>
+          No hay productos con ese criterio.
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -4787,6 +5164,7 @@ function StoreView({
                   specialClientSession={specialClientSession}
                   totalPieces={totalPieces}
                   isMobile={isMobile}
+                  getCartUnitPrice={getCartUnitPrice}
                 />
                 ))}
               </div>
@@ -4818,6 +5196,7 @@ function StoreView({
         }
         specialClientSession={specialClientSession}
         totalPieces={totalPieces}
+        getCartUnitPrice={getCartUnitPrice}
       />
 
       <CartDrawer
@@ -4975,6 +5354,8 @@ function AdminView({
   fetchSpecialClients,
   productTierPrices,
   fetchTierPrices,
+  specialPriceRules,
+  setSpecialPriceRules,
   orders,
   fetchOrders,
 }) {
@@ -5025,7 +5406,7 @@ function AdminView({
 
   const prepareDraftForSave = (draft) => {
     const finalCategory = draft.customCategory?.trim() || draft.category
-    const finalSubcategory = finalCategory === 'Jeans' ? draft.customSubcategory?.trim() || draft.subcategory : ''
+    const finalSubcategory = draft.customSubcategory?.trim() || draft.subcategory || ''
     const finalBrand = draft.customBrand?.trim() || draft.brand
     return { ...draft, category: finalCategory, subcategory: finalSubcategory, brand: finalBrand }
   }
@@ -5049,8 +5430,9 @@ function AdminView({
 
     const inserted = data?.[0]
     if (inserted?.id) {
+      const defaultTierPrices = getDefaultTierPricesForProduct(clean, specialPriceRules)
       for (const tier of CLIENT_TIERS) {
-        await supabase.from('product_customer_prices').insert([{ product_id: inserted.id, client_tier: tier, price: Number(clean.price_tier10 || clean.price_tier3 || clean.price || 0) }])
+        await supabase.from('product_customer_prices').insert([{ product_id: inserted.id, client_tier: tier, price: Number(defaultTierPrices[tier] || 0) }])
       }
       await fetchTierPrices()
     }
@@ -5157,7 +5539,7 @@ function AdminView({
                 <h4 style={{ margin: 0, fontSize: 22 }}>{product.name}</h4>
                 <Badge>{product.audience}</Badge>
                 <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
-                {product.category === 'Jeans' && product.subcategory ? <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge> : null}
+                {product.subcategory ? <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge> : null}
                 {product.is_offer ? <Badge bg="#fef3c7" color="#92400e">Oferta</Badge> : null}
               </div>
               <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category} | Stock {product.stock_total} | Paquetes {product.package_stock || 0}</p>
@@ -5305,7 +5687,7 @@ function AdminView({
           ) : null}
 
           {activeTab === 'tarifas' ? (
-            <SpecialPricingAdmin products={products} productTierPrices={productTierPrices} fetchTierPrices={fetchTierPrices} />
+            <SpecialPricingAdmin products={products} productTierPrices={productTierPrices} fetchTierPrices={fetchTierPrices} specialPriceRules={specialPriceRules} setSpecialPriceRules={setSpecialPriceRules} />
           ) : null}
 
           {activeTab === 'promociones' ? (
@@ -5395,10 +5777,29 @@ function AdminLogin({ loginForm, setLoginForm, loginError, showPassword, setShow
 
 export default function App() {
   const isMobile = useIsMobile()
-  const [products, setProducts] = useState([])
+  const [products, setProducts] = useState(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const cached = localStorage.getItem(PRODUCTS_CACHE_KEY)
+      const parsed = cached ? JSON.parse(cached) : []
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
   const [specialClients, setSpecialClients] = useState([])
   const [orders, setOrders] = useState([])
   const [productTierPrices, setProductTierPrices] = useState([])
+  const [specialPriceRules, setSpecialPriceRules] = useState(() => {
+    if (typeof window === 'undefined') return SPECIAL_PRICE_RULE_PRESETS
+    try {
+      const saved = localStorage.getItem(SPECIAL_PRICE_RULES_STORAGE_KEY)
+      const parsed = saved ? JSON.parse(saved) : null
+      return Array.isArray(parsed) && parsed.length ? parsed : SPECIAL_PRICE_RULE_PRESETS
+    } catch {
+      return SPECIAL_PRICE_RULE_PRESETS
+    }
+  })
   const [loading, setLoading] = useState(false)
 
   const [route, setRoute] = useState(
@@ -5441,13 +5842,57 @@ export default function App() {
   const [specialCode, setSpecialCode] = useState('')
   const [specialClientSession, setSpecialClientSession] = useState(null)
 
-  async function fetchProducts() {
-    const { data, error } = await supabase.from('products').select('*').order('created_at', { ascending: false })
+  async function fetchProducts(options = {}) {
+    const full = options.full === true || (route === 'admin' && isAdminAuthenticated)
+    const { data, error } = await supabase
+      .from('products')
+      .select(full ? '*' : PRODUCT_LIST_COLUMNS)
+      .order('created_at', { ascending: false })
     if (error) {
       alert(`No se pudieron leer los productos: ${error.message}`)
       return
     }
-    setProducts((data || []).map(normalizeProduct))
+    const normalized = (data || []).map(normalizeProduct)
+    setProducts(normalized)
+    if (!full) {
+      try {
+        localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(normalized))
+      } catch {
+        // The image payload can exceed local storage on some browsers; live data is still used.
+      }
+
+      window.setTimeout(() => fetchProductGalleryImages(), 120)
+    }
+  }
+
+  async function fetchProductGalleryImages() {
+    const { data, error } = await supabase.from('products').select('id,images_json')
+    if (error || !Array.isArray(data)) return
+
+    const imagesById = new Map()
+    for (const row of data) {
+      let images = []
+      if (Array.isArray(row.images_json)) {
+        images = row.images_json.filter(Boolean)
+      } else if (typeof row.images_json === 'string' && row.images_json.trim()) {
+        try {
+          const parsed = JSON.parse(row.images_json)
+          images = Array.isArray(parsed) ? parsed.filter(Boolean) : []
+        } catch {
+          images = []
+        }
+      }
+      if (images.length > 1) imagesById.set(row.id, images)
+    }
+
+    if (!imagesById.size) return
+    setProducts((prev) =>
+      prev.map((product) =>
+        imagesById.has(product.id)
+          ? { ...product, images: imagesById.get(product.id) }
+          : product
+      )
+    )
   }
 
   async function fetchSpecialClients() {
@@ -5480,10 +5925,32 @@ export default function App() {
 
   useEffect(() => {
     fetchProducts()
-    fetchSpecialClients()
-    fetchTierPrices()
-    fetchOrders()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (route === 'admin' && isAdminAuthenticated) {
+      fetchProducts({ full: true })
+      fetchSpecialClients()
+      fetchTierPrices()
+      fetchOrders()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route, isAdminAuthenticated])
+
+  useEffect(() => {
+    if (specialClientSession?.active && productTierPrices.length === 0) {
+      fetchTierPrices()
+    }
+  }, [specialClientSession, productTierPrices.length])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SPECIAL_PRICE_RULES_STORAGE_KEY, JSON.stringify(specialPriceRules))
+    } catch {
+      // Ignore storage quota issues.
+    }
+  }, [specialPriceRules])
 
   useEffect(() => {
     try {
@@ -5538,9 +6005,11 @@ export default function App() {
       const tierName = specialClientSession.client_tier || ''
       const specialUnlocked = tierName !== 'Plata' || totalPieces >= 10
       if (specialUnlocked) {
+        const specialPrice = getSpecialTierPrice(product, tierName, productTierPrices, specialPriceRules)
+        if (specialPrice > 0) return specialPrice
         const row = findTierPrice(product.id, tierName)
         if (row) return Number(row.price || 0)
-        return Number(product.special_price || product.price_tier10 || product.price_tier3 || normalPrice || 0)
+        return Number(product.price_tier10 || product.price_tier3 || normalPrice || 0)
       }
     }
 
@@ -5737,7 +6206,7 @@ export default function App() {
       subtotal,
       price_level: specialLabel,
       status: 'nuevo',
-      whatsapp_sent: false,
+      whatsapp_sent: true,
     }
 
     const itemsText = itemRows
@@ -5808,45 +6277,64 @@ export default function App() {
       productUpdates.set(product.id, entry)
     }
 
-    try {
-      setLoading(true)
+    const link = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(msg)
 
-      const stockPromises = [...productUpdates.values()].map((entry) => {
-        const payload = {
-          stock_json: entry.stock,
-          stock: totalStock(entry.stock),
+    setLoading(true)
+    setCart([])
+    setCustomer(emptyCustomer)
+    setProducts((prevProducts) =>
+      prevProducts.map((product) => {
+        const entry = productUpdates.get(product.id)
+        if (!entry) return product
+        return {
+          ...product,
+          stock: entry.stock,
+          stock_total: totalStock(entry.stock),
+          package_stock: entry.package_stock,
           sales_count: entry.sales_count,
-          description: composeProductDescription({ ...entry.product, package_stock: entry.package_stock }),
         }
-        return supabase.from('products').update(payload).eq('id', entry.product.id)
       })
+    )
 
-      const orderResult = await supabase.from('orders').insert([orderPayload])
-
-      if (orderResult.error) {
-        alert('No se pudo guardar el pedido: ' + orderResult.error.message)
-        setLoading(false)
-        return
-      }
-
-      const stockResults = await Promise.all(stockPromises)
-      const stockError = stockResults.find((result) => result.error)?.error
-      if (stockError) {
-        alert('Pedido guardado, pero no se pudo actualizar todo el stock: ' + stockError.message)
-        setLoading(false)
-        return
-      }
-
-      const link = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(msg)
-      setCart([])
-      setCustomer(emptyCustomer)
-      setLoading(false)
-      window.location.assign(link)
-    } catch (error) {
-      console.error(error)
-      alert(error.message || 'Error al enviar pedido')
-      setLoading(false)
+    let opened = null
+    try {
+      opened = window.open(link, '_blank', 'noopener,noreferrer')
+    } catch {
+      opened = null
     }
+
+    if (!opened) {
+      window.location.assign(link)
+    }
+
+    setLoading(false)
+
+    Promise.resolve()
+      .then(async () => {
+        const orderResult = await supabase.from('orders').insert([orderPayload])
+        if (orderResult.error) throw orderResult.error
+
+        const stockResults = await Promise.all(
+          [...productUpdates.values()].map((entry) => {
+            const payload = {
+              stock_json: entry.stock,
+              stock: totalStock(entry.stock),
+              sales_count: entry.sales_count,
+              description: composeProductDescription({ ...entry.product, package_stock: entry.package_stock }),
+            }
+            return supabase.from('products').update(payload).eq('id', entry.product.id)
+          })
+        )
+
+        const stockError = stockResults.find((result) => result.error)?.error
+        if (stockError) throw stockError
+
+        fetchProducts()
+        if (route === 'admin' && isAdminAuthenticated) fetchOrders()
+      })
+      .catch((error) => {
+        console.error('WhatsApp abierto, pero fallo el guardado en Supabase:', error)
+      })
   }
 
   const handleLogin = () => {
@@ -5961,6 +6449,8 @@ export default function App() {
             fetchSpecialClients={fetchSpecialClients}
             productTierPrices={productTierPrices}
             fetchTierPrices={fetchTierPrices}
+            specialPriceRules={specialPriceRules}
+            setSpecialPriceRules={setSpecialPriceRules}
             orders={orders}
             fetchOrders={fetchOrders}
           />
