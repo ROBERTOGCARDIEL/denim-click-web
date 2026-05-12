@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Search,
   Menu,
@@ -43,6 +43,7 @@ const PRODUCT_PAGE_SIZE_MOBILE = 12
 const NEW_PRODUCT_DAYS = 7
 const LAST_UNITS_FILTER = '__last_units__'
 const PROMO_ROTATE_MS = 5200
+const HOME_APARTADO_VIDEO_URL = '/apartado-mayoreo.mp4'
 const PRODUCT_META_MARKER = '[[DENIM_CLICK_PRODUCT_META]]'
 const PRODUCT_LIST_COLUMNS = 'id,created_at,name,description,category,subcategory,audience,brand,images,sizes,stock,stock_json,price,price_base,price_tier3,price_tier10,special_price,active,is_new,is_offer,sales_count,category_order'
 const WHATSAPP_NUMBER = '525572665573'
@@ -4521,37 +4522,219 @@ function HelpInfoSection({ isMobile }) {
   )
 }
 
-function OrderStatusLookup({ specialClientSession, isMobile }) {
-  const [phone, setPhone] = useState(specialClientSession?.phone || '')
+function OrderStatusLookup({ specialClientSession, isMobile, variant = 'section', open = true, onClose }) {
+  const activeClient = Boolean(specialClientSession?.active)
+  const specialPhone = specialClientSession?.phone || ''
+  const specialCodeValue = specialClientSession?.client_code || ''
+  const specialName = specialClientSession?.name || ''
+  const [query, setQuery] = useState(specialPhone)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(false)
+  const [hasSearched, setHasSearched] = useState(false)
 
   useEffect(() => {
-    if (specialClientSession?.phone) setPhone(specialClientSession.phone)
-  }, [specialClientSession?.phone])
+    if (specialPhone) setQuery(specialPhone)
+  }, [specialPhone])
 
-  const findOrders = async () => {
-    const digits = phone.replace(/\D/g, '')
-    if (digits.length < 8) {
-      alert('Escribe el telefono con el que solicitaste tu apartado.')
+  const findOrders = useCallback(async (options = {}) => {
+    const rawQuery = activeClient
+      ? specialPhone || specialCodeValue || specialName || query
+      : query
+    const normalized = String(rawQuery || '').trim().toLowerCase()
+    const digits = normalized.replace(/\D/g, '')
+
+    if (!activeClient && normalized.length < 4) {
+      alert('Escribe tu numero de pedido o telefono.')
       return
     }
 
     setLoading(true)
-    const { data, error } = await supabase
+    setHasSearched(true)
+    let request = supabase
       .from('orders')
       .select('*')
-      .in('customer_phone', uniqueValues([phone, digits]))
       .order('created_at', { ascending: false })
-      .limit(10)
+      .limit(activeClient ? 80 : 160)
+
+    if (activeClient && specialPhone) {
+      const phoneDigits = String(specialPhone).replace(/\D/g, '')
+      request = request.in('customer_phone', uniqueValues([specialPhone, phoneDigits]))
+    }
+
+    const { data, error } = await request
     setLoading(false)
 
     if (error) {
-      alert('No se pudo consultar tu pedido: ' + error.message)
+      if (!options.silent) alert('No se pudo consultar tu pedido: ' + error.message)
       return
     }
 
-    setOrders(data || [])
+    const lowerName = String(specialName || '').toLowerCase()
+    const lowerCode = String(specialCodeValue || '').toLowerCase()
+    const filtered = (data || []).filter((order) => {
+      const orderPhone = String(order.customer_phone || '').replace(/\D/g, '')
+      const orderNumber = getOrderNumber(order).toLowerCase()
+      const orderNotes = String(order.notes || '').toLowerCase()
+      const orderName = String(order.customer_name || '').toLowerCase()
+
+      if (activeClient) {
+        if (digits && orderPhone.includes(digits)) return true
+        if (lowerCode && orderNotes.includes(lowerCode)) return true
+        if (lowerName && (orderNotes.includes(lowerName) || orderName.includes(lowerName))) return true
+      }
+
+      return (
+        orderNumber.includes(normalized) ||
+        orderNotes.includes(normalized) ||
+        (digits.length >= 8 && orderPhone.includes(digits))
+      )
+    })
+
+    setOrders(filtered)
+  }, [activeClient, query, specialCodeValue, specialName, specialPhone])
+
+  useEffect(() => {
+    if (!activeClient) return
+    if (variant === 'modal' && !open) return
+    findOrders({ silent: true })
+  }, [activeClient, findOrders, open, variant])
+
+  const orderList = orders.length > 0 ? (
+    <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
+      {orders.map((order) => {
+        const meta = getOrderStatusMeta(order.status)
+        return (
+          <div
+            key={order.id}
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 12,
+              flexWrap: 'wrap',
+              border: variant === 'footer' ? '1px solid rgba(255,255,255,.12)' : '1px solid #e5e7eb',
+              borderRadius: 14,
+              padding: 12,
+              background: variant === 'footer' ? 'rgba(255,255,255,.04)' : '#fff',
+            }}
+          >
+            <div>
+              <strong>{getOrderNumber(order)}</strong>
+              <div style={{ color: variant === 'footer' ? 'rgba(255,255,255,.68)' : '#6b7280', marginTop: 4 }}>
+                {formatShortDate(order.created_at)} | {order.total_pieces || 0} piezas | {mxn(order.subtotal)}
+              </div>
+            </div>
+            <span style={{ borderRadius: 999, padding: '8px 12px', background: meta.bg, color: meta.color, fontWeight: 900 }}>
+              {meta.label}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  ) : hasSearched && !loading ? (
+    <p style={{ margin: '14px 0 0', color: variant === 'footer' ? 'rgba(255,255,255,.66)' : '#6b7280' }}>
+      No encontramos pedidos con esos datos.
+    </p>
+  ) : null
+
+  const queryControls = activeClient ? (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+      <div
+        style={{
+          border: variant === 'footer' ? '1px solid rgba(255,255,255,.14)' : '1px solid #e5e7eb',
+          borderRadius: 16,
+          padding: '12px 14px',
+          color: variant === 'footer' ? 'rgba(255,255,255,.82)' : '#111827',
+          background: variant === 'footer' ? 'rgba(255,255,255,.05)' : '#fff',
+          flex: '1 1 220px',
+        }}
+      >
+        Cliente activo: <strong>{specialName || specialCodeValue}</strong>
+      </div>
+      <button type="button" style={variant === 'footer' ? styles.buttonSecondary : styles.buttonPrimary} onClick={() => findOrders()} disabled={loading}>
+        {loading ? 'Buscando...' : 'Actualizar'}
+      </button>
+    </div>
+  ) : (
+    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      <input
+        style={{
+          ...styles.input,
+          minWidth: isMobile ? '100%' : 260,
+          flex: '1 1 260px',
+          background: variant === 'footer' ? '#0b0c0d' : '#fff',
+          color: variant === 'footer' ? '#fff' : '#111827',
+          border: variant === 'footer' ? '1px solid rgba(255,255,255,.16)' : styles.input.border,
+        }}
+        placeholder="Numero de pedido o telefono"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <button type="button" style={variant === 'footer' ? styles.buttonSecondary : styles.buttonPrimary} onClick={() => findOrders()} disabled={loading}>
+        {loading ? 'Buscando...' : 'Consultar'}
+      </button>
+    </div>
+  )
+
+  if (variant === 'modal') {
+    if (!open) return null
+
+    return (
+      <div
+        role="dialog"
+        aria-modal="true"
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 95,
+          background: 'rgba(0,0,0,.62)',
+          display: 'grid',
+          placeItems: 'center',
+          padding: isMobile ? 12 : 24,
+        }}
+        onClick={onClose}
+      >
+        <div
+          style={{
+            ...styles.card,
+            width: '100%',
+            maxWidth: 720,
+            borderRadius: isMobile ? 22 : 28,
+            padding: isMobile ? 20 : 28,
+            maxHeight: '86vh',
+            overflowY: 'auto',
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'flex-start' }}>
+            <div>
+              <h2 style={{ margin: 0, fontSize: isMobile ? 30 : 38 }}>Estatus de pedido</h2>
+              <p style={{ margin: '8px 0 0', color: '#6b7280', lineHeight: 1.45 }}>
+                {activeClient ? 'Tus pedidos aparecen con tu cliente activo.' : 'Escribe tu numero de pedido o telefono para consultar tu apartado.'}
+              </p>
+            </div>
+            <button type="button" aria-label="Cerrar estatus" onClick={onClose} style={{ ...styles.buttonSecondary, borderRadius: 999, padding: 12 }}>
+              <X size={22} />
+            </button>
+          </div>
+
+          <div style={{ marginTop: 18 }}>{queryControls}</div>
+          {orderList}
+        </div>
+      </div>
+    )
+  }
+
+  if (variant === 'footer') {
+    return (
+      <div style={{ display: 'grid', gap: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 22 }}>Estatus de pedido</h3>
+        <p style={{ margin: 0, color: 'rgba(255,255,255,.68)', lineHeight: 1.6 }}>
+          Consulta como va tu apartado con tu numero de pedido o telefono.
+        </p>
+        {queryControls}
+        {orderList}
+      </div>
+    )
   }
 
   return (
@@ -4561,30 +4744,11 @@ function OrderStatusLookup({ specialClientSession, isMobile }) {
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr auto', gap: 16, alignItems: 'end' }}>
             <div>
               <h2 style={{ margin: 0, fontSize: isMobile ? 24 : 30 }}>Estatus de pedido</h2>
-              <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Consulta como va tu apartado con tu numero de telefono.</p>
+              <p style={{ margin: '6px 0 0', color: '#6b7280' }}>Consulta como va tu apartado con tu numero de pedido o telefono.</p>
             </div>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-              <input style={{ ...styles.input, minWidth: isMobile ? '100%' : 240 }} placeholder="Telefono del pedido" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              <button type="button" style={styles.buttonPrimary} onClick={findOrders} disabled={loading}>{loading ? 'Buscando...' : 'Consultar'}</button>
-            </div>
+            {queryControls}
           </div>
-
-          {orders.length > 0 ? (
-            <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
-              {orders.map((order) => {
-                const meta = getOrderStatusMeta(order.status)
-                return (
-                  <div key={order.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', border: '1px solid #e5e7eb', borderRadius: 14, padding: 12 }}>
-                    <div>
-                      <strong>{formatShortDate(order.created_at)}</strong>
-                      <div style={{ color: '#6b7280', marginTop: 4 }}>{order.total_pieces || 0} piezas | {mxn(order.subtotal)}</div>
-                    </div>
-                    <span style={{ borderRadius: 999, padding: '8px 12px', background: meta.bg, color: meta.color, fontWeight: 900 }}>{meta.label}</span>
-                  </div>
-                )
-              })}
-            </div>
-          ) : null}
+          {orderList}
         </div>
       </div>
     </section>
@@ -4630,10 +4794,11 @@ function StoreView({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [loginOpen, setLoginOpen] = useState(() => !specialClientSession?.active)
   const [bagOpen, setBagOpen] = useState(false)
+  const [orderStatusOpen, setOrderStatusOpen] = useState(false)
+  const [showHomeCatalog, setShowHomeCatalog] = useState(false)
   const [quickViewProduct, setQuickViewProduct] = useState(null)
   const [page, setPage] = useState(1)
   const [promoIndex, setPromoIndex] = useState(0)
-  const promoTouchStartX = useRef(0)
 
   useEffect(() => {
     if (specialClientSession?.active) setLoginOpen(false)
@@ -4648,7 +4813,12 @@ function StoreView({
   }, [featuredProducts])
   const promoProducts = useMemo(() => activeProducts.filter((p) => p.is_offer && getCover(p)), [activeProducts])
   const offerProduct = promoProducts.length ? promoProducts[promoIndex % promoProducts.length] : heroProduct
-  const totalAvailable = activeProducts.reduce((sum, product) => sum + totalStock(product.stock), 0)
+  const homeHeroProduct = offerProduct || heroProduct
+  const topProducts = useMemo(() => {
+    return [...featuredProducts]
+      .sort((a, b) => Number(b.sales_count || 0) - Number(a.sales_count || 0) || new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+      .slice(0, 3)
+  }, [featuredProducts])
   const totalPieces = useMemo(() => getCartTotalPieces(cart), [cart])
   
   const firstClientName = specialClientSession?.name
@@ -4702,8 +4872,6 @@ function StoreView({
     return () => window.clearInterval(id)
   }, [isHomeView, promoProducts.length])
 
-  const subtotalPreview = getCartSubtotal(cart, getCartUnitPrice)
-
   const goHome = () => {
     setStoreAudience('Todo')
     setStoreCategory('Todos')
@@ -4713,6 +4881,7 @@ function StoreView({
     setOpenMegaMenu(false)
     setMobileMenuOpen(false)
     setQuickViewProduct(null)
+    setShowHomeCatalog(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -4812,6 +4981,21 @@ function StoreView({
             ) : null}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {!isMobile ? (
+                <button
+                  type="button"
+                  onClick={() => setOrderStatusOpen(true)}
+                  style={{
+                    ...styles.buttonSecondary,
+                    height: 52,
+                    borderRadius: 999,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Estatus de pedido
+                </button>
+              ) : null}
+
               <button
                 type="button"
                 aria-label="Abrir bolsa de apartados"
@@ -4919,6 +5103,24 @@ function StoreView({
             </div>
           </div>
 
+          {isMobile ? (
+            <div style={{ padding: '0 0 12px' }}>
+              <button
+                type="button"
+                onClick={() => setOrderStatusOpen(true)}
+                style={{
+                  ...styles.buttonSecondary,
+                  width: '100%',
+                  minHeight: 40,
+                  borderRadius: 999,
+                  fontWeight: 900,
+                }}
+              >
+                Estatus de pedido
+              </button>
+            </div>
+          ) : null}
+
           {!isMobile && openMegaMenu ? (
             <DesktopMegaMenu
               activeAudience={megaAudience}
@@ -4948,140 +5150,145 @@ function StoreView({
       />
 
       {isHomeView ? (
-      <section style={{ padding: isMobile ? '16px 0 18px' : '30px 0 24px' }}>
-        <div style={styles.container}>
-          <div
-            style={{
-              display: 'grid',
-              gap: isMobile ? 16 : 24,
-              gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.1fr) minmax(360px, .9fr)',
-              alignItems: 'stretch',
-            }}
-          >
-            <div
-              style={{
-                position: 'relative',
-                minHeight: isMobile ? 520 : 620,
-                overflow: 'hidden',
-                background: '#111315',
-                color: '#fff',
-                borderRadius: isMobile ? 0 : 8,
-              }}
-            >
-              {heroProduct && getCover(heroProduct) ? (
-                <img
-                  src={getCover(heroProduct)}
-                  alt={heroProduct.name}
-                  loading="eager"
-                  decoding="async"
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                />
-              ) : (
-                <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#1f2937' }}>
-                  <DenimClickLogo variant="light" size="lg" />
-                </div>
-              )}
+        <>
+          <section style={{ padding: isMobile ? '16px 0 18px' : '28px 0 28px' }}>
+            <div style={styles.container}>
+              <div
+                style={{
+                  position: 'relative',
+                  minHeight: isMobile ? 560 : 640,
+                  overflow: 'hidden',
+                  background: '#111315',
+                  color: '#fff',
+                  borderRadius: isMobile ? 0 : 8,
+                }}
+              >
+                {homeHeroProduct && getCover(homeHeroProduct) ? (
+                  <img
+                    src={getCover(homeHeroProduct)}
+                    alt={homeHeroProduct.name}
+                    loading="eager"
+                    decoding="async"
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : (
+                  <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#1f2937' }}>
+                    <DenimClickLogo variant="light" size="lg" />
+                  </div>
+                )}
 
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.10) 25%, rgba(0,0,0,.78) 100%)' }} />
+                {HOME_APARTADO_VIDEO_URL ? (
+                  <video
+                    src={HOME_APARTADO_VIDEO_URL}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    preload="metadata"
+                    poster={homeHeroProduct && getCover(homeHeroProduct) ? getCover(homeHeroProduct) : undefined}
+                    onError={(event) => {
+                      event.currentTarget.style.display = 'none'
+                    }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                ) : null}
 
-              <div style={{ position: 'absolute', left: isMobile ? 20 : 34, right: isMobile ? 20 : 34, bottom: isMobile ? 24 : 34 }}>
-                <p style={{ margin: 0, color: '#f7d38a', fontSize: 13, fontWeight: 950, textTransform: 'uppercase', letterSpacing: 0 }}>
-                  Producto destacado
-                </p>
-                <h1 style={{ margin: '10px 0 0', fontSize: isMobile ? 44 : 72, lineHeight: .93, maxWidth: 780 }}>
-                  {heroProduct?.name || 'Denim Click'}
-                </h1>
-                <p style={{ margin: '14px 0 0', color: 'rgba(255,255,255,.78)', fontSize: isMobile ? 16 : 19, maxWidth: 620, lineHeight: 1.55 }}>
-                  {heroProduct
-                    ? heroProduct.brand + ' · ' + heroProduct.category + (heroProduct.subcategory ? ' · ' + heroProduct.subcategory : '')
-                    : 'Explora productos destacados, ofertas y apartados por WhatsApp.'}
-                </p>
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.10) 20%, rgba(0,0,0,.82) 100%)' }} />
 
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 22 }}>
-                  <button
-                    type="button"
-                    onClick={() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' })}
-                    style={{ ...styles.buttonPrimary, background: '#fff', color: '#111315', boxShadow: 'none', borderRadius: 999 }}
-                  >
-                    Ver catalogo
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => heroProduct && setQuickViewProduct(heroProduct)}
-                    style={{ ...styles.buttonSecondary, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,.34)', borderRadius: 999 }}
-                  >
-                    Ver producto
-                  </button>
+                <div style={{ position: 'absolute', left: isMobile ? 20 : 42, right: isMobile ? 20 : 42, bottom: isMobile ? 28 : 44 }}>
+                  <p style={{ margin: 0, color: '#f7d38a', fontSize: 13, fontWeight: 950, textTransform: 'uppercase', letterSpacing: 0 }}>
+                    Promocion activa
+                  </p>
+                  <h1 style={{ margin: '10px 0 0', fontSize: isMobile ? 44 : 78, lineHeight: .94, maxWidth: 880 }}>
+                    Apartado por mayoreo
+                  </h1>
+                  <p style={{ margin: '14px 0 0', color: 'rgba(255,255,255,.82)', fontSize: isMobile ? 17 : 21, maxWidth: 720, lineHeight: 1.5 }}>
+                    Arma tu bolsa, revisa disponibilidad por talla y solicita tu apartado directo por WhatsApp.
+                  </p>
+
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 24 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowHomeCatalog(true)
+                        window.setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 0)
+                      }}
+                      style={{ ...styles.buttonPrimary, background: '#fff', color: '#111315', boxShadow: 'none', borderRadius: 999 }}
+                    >
+                      Ver catalogo
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setBagOpen(true)}
+                      style={{ ...styles.buttonSecondary, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,.38)', borderRadius: 999 }}
+                    >
+                      <ShoppingBag size={18} />
+                      Ver bolsa
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
+          </section>
 
-            <div style={{ display: 'grid', gap: 14 }}>
-              <div
-                onClick={() => offerProduct && setQuickViewProduct(offerProduct)}
-                onTouchStart={(event) => { promoTouchStartX.current = event.touches?.[0]?.clientX || 0 }}
-                onTouchEnd={(event) => {
-                  const endX = event.changedTouches?.[0]?.clientX || promoTouchStartX.current
-                  const diff = promoTouchStartX.current - endX
-                  if (Math.abs(diff) > 34 && promoProducts.length > 1) setPromoIndex((prev) => (prev + (diff > 0 ? 1 : -1) + promoProducts.length) % promoProducts.length)
-                }}
-                style={{ ...styles.card, borderRadius: isMobile ? 0 : 8, overflow: 'hidden', padding: 0, cursor: offerProduct ? 'pointer' : 'default' }}
-              >
-                <div style={{ position: 'relative', minHeight: isMobile ? 270 : 330, background: '#e8e2d8' }}>
-                  {offerProduct && getCover(offerProduct) ? (
-                    <img src={getCover(offerProduct)} alt={offerProduct.name} loading="lazy" decoding="async" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                  ) : null}
-                  <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.06) 20%, rgba(0,0,0,.70) 100%)' }} />
-                  <div style={{ position: 'absolute', left: 18, right: 18, bottom: 18, color: '#fff' }}>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 950, color: '#f7d38a', textTransform: 'uppercase' }}>Promocion activa</p>
-                    <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 28 : 34, lineHeight: 1.04 }}>
-                      {offerProduct?.is_offer ? 'Oferta disponible' : 'Apartado por mayoreo'}
-                    </h2>
-                    <p style={{ margin: '8px 0 0', color: 'rgba(255,255,255,.82)' }}>
-                      {offerProduct?.promotion_title || offerProduct?.name || 'Agrega piezas y desbloquea mejor precio.'}
-                    </p>
-                    {promoProducts.length > 1 ? (
-                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                        <button type="button" onClick={(event) => { event.stopPropagation(); setPromoIndex((prev) => (prev - 1 + promoProducts.length) % promoProducts.length) }} style={{ ...styles.buttonSecondary, borderRadius: 999, padding: '8px 12px' }}>‹</button>
-                        <button type="button" onClick={(event) => { event.stopPropagation(); setPromoIndex((prev) => (prev + 1) % promoProducts.length) }} style={{ ...styles.buttonSecondary, borderRadius: 999, padding: '8px 12px' }}>›</button>
-                      </div>
-                    ) : null}
-                  </div>
+          <section style={{ padding: isMobile ? '10px 0 28px' : '18px 0 38px' }}>
+            <div style={styles.container}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'end', marginBottom: 16 }}>
+                <div>
+                  <p style={{ margin: 0, color: '#9a6b16', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Top clientes</p>
+                  <h2 style={{ margin: '6px 0 0', fontSize: isMobile ? 30 : 42 }}>Productos destacados</h2>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowHomeCatalog(true)
+                    window.setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 0)
+                  }}
+                  style={{ ...styles.buttonSecondary, borderRadius: 999 }}
+                >
+                  Ver todos
+                </button>
               </div>
 
-              <div style={{ display: 'none' }}>
-                {[
-                  { label: 'Productos activos', value: activeProducts.length },
-                  { label: 'Stock visible', value: totalAvailable },
-                  { label: 'Piezas en bolsa', value: totalPieces },
-                  { label: 'Subtotal', value: mxn(subtotalPreview) },
-                ].map((stat) => (
-                  <div key={stat.label} style={{ border: '1px solid #e5dfd4', background: '#fff', borderRadius: 8, padding: 14 }}>
-                    <p style={{ margin: 0, color: '#6b7280', fontSize: 12, fontWeight: 800 }}>{stat.label}</p>
-                    <p style={{ margin: '6px 0 0', fontWeight: 950, fontSize: isMobile ? 22 : 26 }}>{stat.value}</p>
-                  </div>
+              <div
+                style={{
+                  display: 'grid',
+                  gap: isMobile ? 12 : 22,
+                  gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))',
+                  alignItems: 'start',
+                }}
+              >
+                {topProducts.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    selectedConfig={selectedConfig}
+                    setSelectedConfig={setSelectedConfig}
+                    onAddToCart={addToCart}
+                    onOpenGallery={(prod, imageIndex = 0) =>
+                      setGallery({
+                        open: true,
+                        product: prod,
+                        imageIndex,
+                      })
+                    }
+                    onOpenQuickView={(prod) => setQuickViewProduct(prod)}
+                    specialClientSession={specialClientSession}
+                    totalPieces={totalPieces}
+                    isMobile={isMobile}
+                    getCartUnitPrice={getCartUnitPrice}
+                  />
                 ))}
               </div>
-
-              <div style={{ display: 'none' }}>
-                <p style={{ margin: 0, color: '#f7d38a', fontWeight: 950 }}>Mayoreo inteligente</p>
-                <p style={{ margin: '8px 0 0', color: 'rgba(255,255,255,.78)', lineHeight: 1.55 }}>
-                  {specialClientSession?.active
-                    ? 'Tu codigo de cliente esta activo y se aplican tus precios especiales.'
-                    : totalPieces < 3
-                      ? 'Te faltan ' + (3 - totalPieces) + ' pieza' + (3 - totalPieces > 1 ? 's' : '') + ' para precio de 3+ piezas.'
-                      : totalPieces < 10
-                        ? 'Ya tienes 3+ piezas. Te faltan ' + (10 - totalPieces) + ' para el mejor precio.'
-                        : 'Ya tienes el mejor precio por volumen.'}
-                </p>
-              </div>
             </div>
-          </div>
-        </div>
-      </section>
+          </section>
+
+          <HelpInfoSection isMobile={isMobile} />
+        </>
       ) : null}
 
+      {(!isHomeView || showHomeCatalog) ? (
+        <>
       <section style={{ paddingBottom: 18 }}>
         <div style={styles.container}>
           <div
@@ -5173,10 +5380,16 @@ function StoreView({
           )}
         </div>
       </section>
+        </>
+      ) : null}
 
-      <OrderStatusLookup specialClientSession={specialClientSession} isMobile={isMobile} />
-
-      <HelpInfoSection isMobile={isMobile} />
+      <OrderStatusLookup
+        specialClientSession={specialClientSession}
+        isMobile={isMobile}
+        variant="modal"
+        open={orderStatusOpen}
+        onClose={() => setOrderStatusOpen(false)}
+      />
 
       <ProductQuickView
         open={!!quickViewProduct}
@@ -5249,16 +5462,7 @@ function StoreView({
               </p>
             </div>
 
-            <div style={{ display: 'grid', gap: 10 }}>
-              <h3 style={{ margin: 0, fontSize: 22 }}>Aparta tus prendas por WhatsApp</h3>
-              <p style={{ margin: 0, color: 'rgba(255,255,255,.68)', lineHeight: 1.6 }}>
-                La bolsa guarda tu seleccion, calcula mayoreo y prepara el mensaje para confirmar directo con Denim Click.
-              </p>
-              <button type="button" onClick={() => setBagOpen(true)} style={{ ...styles.buttonSecondary, borderRadius: 999, width: 'fit-content' }}>
-                <ShoppingBag size={18} />
-                Ver bolsa
-              </button>
-            </div>
+            <OrderStatusLookup specialClientSession={specialClientSession} isMobile={isMobile} variant="footer" />
 
             <div>
               <h3 style={{ margin: 0, fontSize: 18 }}>Redes sociales</h3>
