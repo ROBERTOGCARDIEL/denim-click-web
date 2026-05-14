@@ -2357,6 +2357,46 @@ function ProductCard({
   )
 }
 
+function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuickView }) {
+  return (
+    <article
+      style={{
+        ...styles.card,
+        overflow: 'hidden',
+        borderRadius: isMobile ? 0 : 8,
+        border: isMobile ? 'none' : styles.card.border,
+        boxShadow: isMobile ? 'none' : styles.card.boxShadow,
+        background: '#fff',
+      }}
+    >
+      <ProductMediaCarousel
+        product={product}
+        isMobile={isMobile}
+        onOpenGallery={onOpenGallery}
+        onOpenQuickView={onOpenQuickView}
+      />
+      <div style={{ padding: isMobile ? '12px 0 18px' : 18 }}>
+        <button
+          type="button"
+          onClick={() => onOpenQuickView(product)}
+          style={{
+            width: '100%',
+            border: 'none',
+            background: 'transparent',
+            padding: 0,
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          <h3 style={{ margin: 0, fontSize: isMobile ? 17 : 24, lineHeight: 1.12, fontWeight: 950 }}>
+            {product.name}
+          </h3>
+        </button>
+      </div>
+    </article>
+  )
+}
+
 function ProductQuickView({
   open,
   product,
@@ -4335,7 +4375,7 @@ function OrdersAdmin({ orders, fetchOrders }) {
 
 function DenimClickLogo({ variant = 'light', size = 'md' }) {
   const color = variant === 'light' ? '#fff' : '#111315'
-  const cottonColor = variant === 'light' ? '#fff' : '#111315'
+  const iconColor = variant === 'light' ? '#fff' : '#111315'
   const scale = size === 'xs' ? 0.64 : size === 'sm' ? 0.82 : size === 'lg' ? 1.18 : 1
   const letterStyle = {
     fontSize: Math.round(18 * scale),
@@ -4375,31 +4415,16 @@ function DenimClickLogo({ variant = 'light', size = 'md' }) {
         aria-hidden="true"
         style={{ display: 'block', flex: '0 0 auto' }}
       >
+        <path d="M17 8v12" stroke={iconColor} strokeWidth="5" strokeLinecap="round" />
+        <path d="M8 28h12" stroke={iconColor} strokeWidth="5" strokeLinecap="round" />
+        <path d="M11 13l8 8" stroke={iconColor} strokeWidth="5" strokeLinecap="round" />
+        <path d="M28 12l-6 10" stroke={iconColor} strokeWidth="5" strokeLinecap="round" />
         <path
-          d="M32 10c8.8 0 15.8 6.6 16.5 15 7.3 1.3 12.8 7.7 12.8 15.3 0 8.7-7 15.7-15.6 15.7-4.7 0-8.8-2.1-11.7-5.3-2.8 3.2-7 5.3-11.7 5.3C13.7 56 6.7 49 6.7 40.3c0-7.6 5.4-14 12.7-15.3C20.1 16.6 27.2 10 32 10Z"
-          fill="none"
-          stroke={cottonColor}
-          strokeWidth="4.8"
+          d="M27 22v34l9-9 6 13 8-4-6-12h12L27 22Z"
+          fill={iconColor}
+          stroke={iconColor}
+          strokeWidth="2"
           strokeLinejoin="round"
-        />
-        <path
-          d="M32 57V42"
-          fill="none"
-          stroke={cottonColor}
-          strokeWidth="5"
-          strokeLinecap="round"
-        />
-        <path
-          d="M32 20c6.6 8.2 8.2 16.3 0 25-8.2-8.7-6.6-16.8 0-25Z"
-          fill={cottonColor}
-        />
-        <path
-          d="M29.2 46.5C20.8 44.4 15 37.2 14.5 29c8.5 2.4 14 8.6 17.5 17.5h-2.8Z"
-          fill={cottonColor}
-        />
-        <path
-          d="M34.8 46.5C43.2 44.4 49 37.2 49.5 29c-8.5 2.4-14 8.6-17.5 17.5h2.8Z"
-          fill={cottonColor}
         />
       </svg>
 
@@ -4417,6 +4442,121 @@ function SocialIcon({ icon, size = 20 }) {
   if (icon === 'instagram') return <Instagram size={size} />
   if (icon === 'youtube') return <Youtube size={size} />
   return <Music2 size={size} />
+}
+
+function TopHelpMenu({ isMobile, open, setOpen, onOpenMenu, onOrderStatus, onImprovePrice, onHelp }) {
+  const menuItems = [
+    {
+      label: 'Estatus del pedido',
+      text: 'Consulta el avance de tus apartados.',
+      action: onOrderStatus,
+    },
+    {
+      label: 'Mejora tu precio',
+      text: 'Activa tu codigo de cliente especial.',
+      action: onImprovePrice,
+    },
+    {
+      label: 'Ayuda',
+      text: 'Preguntas frecuentes y soporte por WhatsApp.',
+      action: onHelp,
+    },
+  ]
+
+  return (
+    <div
+      style={{ position: 'relative', flex: '0 0 auto' }}
+      onMouseEnter={() => {
+        if (!isMobile) {
+          onOpenMenu?.()
+          setOpen(true)
+        }
+      }}
+      onMouseLeave={() => {
+        if (!isMobile) setOpen(false)
+      }}
+    >
+      <button
+        type="button"
+        aria-label="Ayuda y opciones"
+        title="Ayuda y opciones"
+        onClick={() => {
+          onOpenMenu?.()
+          setOpen(!open)
+        }}
+        style={{
+          width: isMobile ? 44 : 46,
+          height: isMobile ? 44 : 46,
+          borderRadius: 999,
+          border: '1px solid rgba(255,255,255,.20)',
+          background: 'transparent',
+          color: '#fff',
+          display: 'grid',
+          placeItems: 'center',
+          cursor: 'pointer',
+        }}
+      >
+        <HelpCircle size={isMobile ? 23 : 25} />
+      </button>
+
+      {open ? (
+        <div
+          style={{
+            position: 'absolute',
+            right: 0,
+            top: 'calc(100% + 12px)',
+            width: isMobile ? 268 : 300,
+            background: '#fff',
+            color: '#111315',
+            border: '1px solid #e5e7eb',
+            borderRadius: 18,
+            boxShadow: '0 24px 60px rgba(0,0,0,.24)',
+            padding: 8,
+            zIndex: 80,
+          }}
+        >
+          {menuItems.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              onClick={() => {
+                setOpen(false)
+                item.action?.()
+              }}
+              style={{
+                width: '100%',
+                border: 'none',
+                background: 'transparent',
+                color: '#111315',
+                cursor: 'pointer',
+                textAlign: 'left',
+                borderRadius: 12,
+                padding: '12px 12px',
+                display: 'grid',
+                gridTemplateColumns: '1fr auto',
+                gap: 10,
+                alignItems: 'center',
+              }}
+              onMouseEnter={(event) => {
+                event.currentTarget.style.background = '#f5f5f5'
+              }}
+              onMouseLeave={(event) => {
+                event.currentTarget.style.background = 'transparent'
+              }}
+            >
+              <span>
+                <strong style={{ display: 'block', fontSize: 15 }}>{item.label}</strong>
+                <span style={{ display: 'block', color: '#6b7280', fontSize: 12, marginTop: 3, lineHeight: 1.35 }}>
+                  {item.text}
+                </span>
+              </span>
+              <ChevronRight size={16} />
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 function HelpInfoSection({ isMobile }) {
@@ -4450,7 +4590,7 @@ function HelpInfoSection({ isMobile }) {
   ]
 
   return (
-    <section style={{ background: '#f7f4ef', padding: isMobile ? '34px 0' : '52px 0' }}>
+    <section id="ayuda" style={{ background: '#f7f4ef', padding: isMobile ? '34px 0' : '52px 0' }}>
       <div style={styles.container}>
         <div style={{ display: 'grid', gap: 18 }}>
           <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr .82fr', gap: 18, alignItems: 'stretch' }}>
@@ -4522,7 +4662,7 @@ function HelpInfoSection({ isMobile }) {
   )
 }
 
-function OrderStatusLookup({ specialClientSession, isMobile, variant = 'section', open = true, onClose }) {
+function OrderStatusLookup({ specialClientSession, isMobile, variant = 'section', open = true, onClose, initialQuery = '', autoSearchKey = 0 }) {
   const activeClient = Boolean(specialClientSession?.active)
   const specialPhone = specialClientSession?.phone || ''
   const specialCodeValue = specialClientSession?.client_code || ''
@@ -4533,13 +4673,14 @@ function OrderStatusLookup({ specialClientSession, isMobile, variant = 'section'
   const [hasSearched, setHasSearched] = useState(false)
 
   useEffect(() => {
-    if (specialPhone) setQuery(specialPhone)
-  }, [specialPhone])
+    if (activeClient && specialPhone) setQuery(specialPhone)
+    if (!activeClient && initialQuery) setQuery(initialQuery)
+  }, [activeClient, initialQuery, specialPhone])
 
   const findOrders = useCallback(async (options = {}) => {
-    const rawQuery = activeClient
+    const rawQuery = options.queryOverride ?? (activeClient
       ? specialPhone || specialCodeValue || specialName || query
-      : query
+      : query)
     const normalized = String(rawQuery || '').trim().toLowerCase()
     const digits = normalized.replace(/\D/g, '')
 
@@ -4598,6 +4739,13 @@ function OrderStatusLookup({ specialClientSession, isMobile, variant = 'section'
     if (variant === 'modal' && !open) return
     findOrders({ silent: true })
   }, [activeClient, findOrders, open, variant])
+
+  useEffect(() => {
+    if (variant !== 'modal' || !open || activeClient) return
+    const clean = String(initialQuery || '').trim()
+    if (clean.length < 4) return
+    findOrders({ silent: true, queryOverride: clean })
+  }, [activeClient, autoSearchKey, findOrders, initialQuery, open, variant])
 
   const orderList = orders.length > 0 ? (
     <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
@@ -4795,6 +4943,10 @@ function StoreView({
   const [loginOpen, setLoginOpen] = useState(() => !specialClientSession?.active)
   const [bagOpen, setBagOpen] = useState(false)
   const [orderStatusOpen, setOrderStatusOpen] = useState(false)
+  const [statusInitialQuery, setStatusInitialQuery] = useState('')
+  const [statusSearchToken, setStatusSearchToken] = useState(0)
+  const [footerStatusQuery, setFooterStatusQuery] = useState('')
+  const [helpMenuOpen, setHelpMenuOpen] = useState(false)
   const [showHomeCatalog, setShowHomeCatalog] = useState(false)
   const [quickViewProduct, setQuickViewProduct] = useState(null)
   const [page, setPage] = useState(1)
@@ -4825,6 +4977,25 @@ function StoreView({
     ? String(specialClientSession.name).trim().split(' ')[0]
     : ''
   const isHomeView = storeAudience === 'Todo' && storeCategory === 'Todos' && storeBrand === 'Todas' && storeFit === 'Todos' && !search.trim()
+
+  const openOrderStatusModal = (queryValue = '') => {
+    setStatusInitialQuery(String(queryValue || '').trim())
+    setStatusSearchToken((value) => value + 1)
+    setOrderStatusOpen(true)
+    setHelpMenuOpen(false)
+  }
+
+  const scrollToHelpSection = () => {
+    setHelpMenuOpen(false)
+    const target = document.getElementById('ayuda')
+    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  const openImprovePriceInfo = () => {
+    setHelpMenuOpen(false)
+    setLoginOpen(true)
+  }
+
   const filteredProducts = useMemo(() => {
     let list = [...products].filter((p) => p.active)
 
@@ -4880,6 +5051,7 @@ function StoreView({
     setSearch('')
     setOpenMegaMenu(false)
     setMobileMenuOpen(false)
+    setHelpMenuOpen(false)
     setQuickViewProduct(null)
     setShowHomeCatalog(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -4963,37 +5135,29 @@ function StoreView({
                   </button>
                 ))}
 
-                <button
-                  type="button"
-                  style={{
-                    background: 'transparent',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 700,
-                    fontSize: 16,
-                    cursor: 'pointer',
-                    paddingBottom: 10,
-                  }}
-                >
-                  Mejora tu precio
-                </button>
+                <TopHelpMenu
+                  isMobile={false}
+                  open={helpMenuOpen}
+                  setOpen={setHelpMenuOpen}
+                  onOpenMenu={() => setOpenMegaMenu(false)}
+                  onOrderStatus={() => openOrderStatusModal()}
+                  onImprovePrice={openImprovePriceInfo}
+                  onHelp={scrollToHelpSection}
+                />
               </nav>
             ) : null}
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              {!isMobile ? (
-                <button
-                  type="button"
-                  onClick={() => setOrderStatusOpen(true)}
-                  style={{
-                    ...styles.buttonSecondary,
-                    height: 52,
-                    borderRadius: 999,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  Estatus de pedido
-                </button>
+              {isMobile ? (
+                <TopHelpMenu
+                  isMobile={true}
+                  open={helpMenuOpen}
+                  setOpen={setHelpMenuOpen}
+                  onOpenMenu={() => setOpenMegaMenu(false)}
+                  onOrderStatus={() => openOrderStatusModal()}
+                  onImprovePrice={openImprovePriceInfo}
+                  onHelp={scrollToHelpSection}
+                />
               ) : null}
 
               <button
@@ -5103,23 +5267,6 @@ function StoreView({
             </div>
           </div>
 
-          {isMobile ? (
-            <div style={{ padding: '0 0 12px' }}>
-              <button
-                type="button"
-                onClick={() => setOrderStatusOpen(true)}
-                style={{
-                  ...styles.buttonSecondary,
-                  width: '100%',
-                  minHeight: 40,
-                  borderRadius: 999,
-                  fontWeight: 900,
-                }}
-              >
-                Estatus de pedido
-              </button>
-            </div>
-          ) : null}
 
           {!isMobile && openMegaMenu ? (
             <DesktopMegaMenu
@@ -5151,16 +5298,16 @@ function StoreView({
 
       {isHomeView ? (
         <>
-          <section style={{ padding: isMobile ? '16px 0 18px' : '28px 0 28px' }}>
-            <div style={styles.container}>
+          <section style={{ padding: 0, background: '#111315' }}>
+            <div style={{ maxWidth: 'none', margin: 0, padding: 0 }}>
               <div
                 style={{
                   position: 'relative',
-                  minHeight: isMobile ? 560 : 640,
+                  minHeight: isMobile ? 'calc(100vh - 76px)' : 680,
                   overflow: 'hidden',
                   background: '#111315',
                   color: '#fff',
-                  borderRadius: isMobile ? 0 : 8,
+                  borderRadius: 0,
                 }}
               >
                 {homeHeroProduct && getCover(homeHeroProduct) ? (
@@ -5196,9 +5343,6 @@ function StoreView({
                 <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.10) 20%, rgba(0,0,0,.82) 100%)' }} />
 
                 <div style={{ position: 'absolute', left: isMobile ? 20 : 42, right: isMobile ? 20 : 42, bottom: isMobile ? 28 : 44 }}>
-                  <p style={{ margin: 0, color: '#f7d38a', fontSize: 13, fontWeight: 950, textTransform: 'uppercase', letterSpacing: 0 }}>
-                    Promocion activa
-                  </p>
                   <h1 style={{ margin: '10px 0 0', fontSize: isMobile ? 44 : 78, lineHeight: .94, maxWidth: 880 }}>
                     Apartado por mayoreo
                   </h1>
@@ -5235,19 +5379,8 @@ function StoreView({
             <div style={styles.container}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'end', marginBottom: 16 }}>
                 <div>
-                  <p style={{ margin: 0, color: '#9a6b16', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Top clientes</p>
                   <h2 style={{ margin: '6px 0 0', fontSize: isMobile ? 30 : 42 }}>Productos destacados</h2>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowHomeCatalog(true)
-                    window.setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 0)
-                  }}
-                  style={{ ...styles.buttonSecondary, borderRadius: 999 }}
-                >
-                  Ver todos
-                </button>
               </div>
 
               <div
@@ -5259,12 +5392,10 @@ function StoreView({
                 }}
               >
                 {topProducts.map((product) => (
-                  <ProductCard
+                  <HomeFeaturedProductCard
                     key={product.id}
                     product={product}
-                    selectedConfig={selectedConfig}
-                    setSelectedConfig={setSelectedConfig}
-                    onAddToCart={addToCart}
+                    isMobile={isMobile}
                     onOpenGallery={(prod, imageIndex = 0) =>
                       setGallery({
                         open: true,
@@ -5273,10 +5404,6 @@ function StoreView({
                       })
                     }
                     onOpenQuickView={(prod) => setQuickViewProduct(prod)}
-                    specialClientSession={specialClientSession}
-                    totalPieces={totalPieces}
-                    isMobile={isMobile}
-                    getCartUnitPrice={getCartUnitPrice}
                   />
                 ))}
               </div>
@@ -5389,6 +5516,8 @@ function StoreView({
         variant="modal"
         open={orderStatusOpen}
         onClose={() => setOrderStatusOpen(false)}
+        initialQuery={statusInitialQuery}
+        autoSearchKey={statusSearchToken}
       />
 
       <ProductQuickView
@@ -5462,7 +5591,50 @@ function StoreView({
               </p>
             </div>
 
-            <OrderStatusLookup specialClientSession={specialClientSession} isMobile={isMobile} variant="footer" />
+            <div style={{ display: 'grid', gap: 10 }}>
+              <h3 style={{ margin: 0, fontSize: 22 }}>Estatus de pedido</h3>
+              <p style={{ margin: 0, color: 'rgba(255,255,255,.68)', lineHeight: 1.6 }}>
+                Consulta como va tu apartado con tu numero de pedido o telefono.
+              </p>
+              {specialClientSession?.active ? (
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <div
+                    style={{
+                      border: '1px solid rgba(255,255,255,.14)',
+                      borderRadius: 16,
+                      padding: '12px 14px',
+                      color: 'rgba(255,255,255,.82)',
+                      background: 'rgba(255,255,255,.05)',
+                      flex: '1 1 220px',
+                    }}
+                  >
+                    Cliente activo: <strong>{specialClientSession.name || specialClientSession.client_code}</strong>
+                  </div>
+                  <button type="button" style={styles.buttonSecondary} onClick={() => openOrderStatusModal()}>
+                    Actualizar
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <input
+                    style={{
+                      ...styles.input,
+                      minWidth: isMobile ? '100%' : 260,
+                      flex: '1 1 260px',
+                      background: '#0b0c0d',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,.16)',
+                    }}
+                    placeholder="Numero de pedido o telefono"
+                    value={footerStatusQuery}
+                    onChange={(event) => setFooterStatusQuery(event.target.value)}
+                  />
+                  <button type="button" style={styles.buttonSecondary} onClick={() => openOrderStatusModal(footerStatusQuery)}>
+                    Consultar
+                  </button>
+                </div>
+              )}
+            </div>
 
             <div>
               <h3 style={{ margin: 0, fontSize: 18 }}>Redes sociales</h3>
