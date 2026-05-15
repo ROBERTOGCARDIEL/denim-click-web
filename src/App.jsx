@@ -2367,7 +2367,7 @@ function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuick
         border: isMobile ? '1px solid #e5e7eb' : styles.card.border,
         boxShadow: isMobile ? '0 2px 8px rgba(0,0,0,0.05)' : styles.card.boxShadow,
         background: '#fff',
-        flex: isMobile ? '0 0 78vw' : undefined,
+        flex: isMobile ? '0 0 calc(100vw - 36px)' : undefined,
       }}
     >
       <ProductMediaCarousel

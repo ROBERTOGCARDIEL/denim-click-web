@@ -186,6 +186,8 @@
 
 .featured-mobile-window {
   width: 100%;
+  overflow: hidden;
+  touch-action: pan-y;
 }
 
 .featured-mobile-track {
@@ -196,7 +198,8 @@
 }
 
 .featured-mobile-track:hover,
-.featured-mobile-track:focus-within {
+.featured-mobile-track:focus-within,
+.featured-mobile-track:active {
   animation-play-state: paused;
 }
 
@@ -205,10 +208,10 @@
     transform: translateX(0);
   }
   34%, 52% {
-    transform: translateX(calc(-78vw - 14px));
+    transform: translateX(calc(-100vw + 22px));
   }
   68%, 86% {
-    transform: translateX(calc(-156vw - 28px));
+    transform: translateX(calc(-200vw + 44px));
   }
   100% {
     transform: translateX(0);
