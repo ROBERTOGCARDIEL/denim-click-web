@@ -2363,10 +2363,11 @@ function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuick
       style={{
         ...styles.card,
         overflow: 'hidden',
-        borderRadius: isMobile ? 0 : 8,
-        border: isMobile ? 'none' : styles.card.border,
-        boxShadow: isMobile ? 'none' : styles.card.boxShadow,
+        borderRadius: 8,
+        border: isMobile ? '1px solid #e5e7eb' : styles.card.border,
+        boxShadow: isMobile ? '0 2px 8px rgba(0,0,0,0.05)' : styles.card.boxShadow,
         background: '#fff',
+        flex: isMobile ? '0 0 78vw' : undefined,
       }}
     >
       <ProductMediaCarousel
@@ -4376,7 +4377,8 @@ function OrdersAdmin({ orders, fetchOrders }) {
 function DenimClickLogo({ variant = 'light', size = 'md' }) {
   const color = variant === 'light' ? '#fff' : '#111315'
   const iconColor = variant === 'light' ? '#fff' : '#111315'
-  const scale = size === 'xs' ? 0.64 : size === 'sm' ? 0.82 : size === 'lg' ? 1.18 : 1
+  const scale = size === 'mobile' ? 0.52 : size === 'xs' ? 0.64 : size === 'sm' ? 0.82 : size === 'lg' ? 1.18 : 1
+  const spinnerBars = Array.from({ length: 18 }, (_, index) => ({ index, opacity: 0.25 + (index / 17) * 0.75 }))
   const letterStyle = {
     fontSize: Math.round(18 * scale),
     fontWeight: 500,
@@ -4408,19 +4410,30 @@ function DenimClickLogo({ variant = 'light', size = 'md' }) {
       </span>
 
       <svg
-        width={Math.round(42 * scale)}
-        height={Math.round(42 * scale)}
-        viewBox="0 0 64 64"
+        width={Math.round(46 * scale)}
+        height={Math.round(46 * scale)}
+        viewBox="0 0 72 72"
         role="img"
         aria-hidden="true"
-        style={{ display: 'block', flex: '0 0 auto' }}
+        style={{ display: 'block', flex: '0 0 auto', overflow: 'visible' }}
       >
-        <path d="M17 8v12" stroke={iconColor} strokeWidth="5" strokeLinecap="round" />
-        <path d="M8 28h12" stroke={iconColor} strokeWidth="5" strokeLinecap="round" />
-        <path d="M11 13l8 8" stroke={iconColor} strokeWidth="5" strokeLinecap="round" />
-        <path d="M28 12l-6 10" stroke={iconColor} strokeWidth="5" strokeLinecap="round" />
+        <g transform="translate(36 36)">
+          {spinnerBars.map((bar) => (
+            <rect
+              key={bar.index}
+              x="-2"
+              y="-31"
+              width="4"
+              height="9"
+              rx="2"
+              fill={iconColor}
+              opacity={bar.opacity}
+              transform={'rotate(' + bar.index * 20 + ')'}
+            />
+          ))}
+        </g>
         <path
-          d="M27 22v34l9-9 6 13 8-4-6-12h12L27 22Z"
+          d="M30 20v33l8-8 6 14 8-4-6-13h12L30 20Z"
           fill={iconColor}
           stroke={iconColor}
           strokeWidth="2"
@@ -4445,6 +4458,7 @@ function SocialIcon({ icon, size = 20 }) {
 }
 
 function TopHelpMenu({ isMobile, open, setOpen, onOpenMenu, onOrderStatus, onImprovePrice, onHelp }) {
+  const openPinnedRef = useRef(false)
   const menuItems = [
     {
       label: 'Estatus del pedido',
@@ -4465,7 +4479,7 @@ function TopHelpMenu({ isMobile, open, setOpen, onOpenMenu, onOrderStatus, onImp
 
   return (
     <div
-      style={{ position: 'relative', flex: '0 0 auto' }}
+      style={{ position: 'relative', flex: '0 0 auto', paddingBottom: isMobile ? 0 : 14, marginBottom: isMobile ? 0 : -14 }}
       onMouseEnter={() => {
         if (!isMobile) {
           onOpenMenu?.()
@@ -4473,7 +4487,7 @@ function TopHelpMenu({ isMobile, open, setOpen, onOpenMenu, onOrderStatus, onImp
         }
       }}
       onMouseLeave={() => {
-        if (!isMobile) setOpen(false)
+        if (!isMobile && !openPinnedRef.current) setOpen(false)
       }}
     >
       <button
@@ -4482,11 +4496,12 @@ function TopHelpMenu({ isMobile, open, setOpen, onOpenMenu, onOrderStatus, onImp
         title="Ayuda y opciones"
         onClick={() => {
           onOpenMenu?.()
-          setOpen(!open)
+          openPinnedRef.current = !(open && openPinnedRef.current)
+          setOpen(openPinnedRef.current ? true : !open)
         }}
         style={{
-          width: isMobile ? 44 : 46,
-          height: isMobile ? 44 : 46,
+          width: isMobile ? 40 : 46,
+          height: isMobile ? 40 : 46,
           borderRadius: 999,
           border: '1px solid rgba(255,255,255,.20)',
           background: 'transparent',
@@ -4504,7 +4519,7 @@ function TopHelpMenu({ isMobile, open, setOpen, onOpenMenu, onOrderStatus, onImp
           style={{
             position: 'absolute',
             right: 0,
-            top: 'calc(100% + 12px)',
+            top: '100%',
             width: isMobile ? 268 : 300,
             background: '#fff',
             color: '#111315',
@@ -4520,6 +4535,7 @@ function TopHelpMenu({ isMobile, open, setOpen, onOpenMenu, onOrderStatus, onImp
               key={item.label}
               type="button"
               onClick={() => {
+                openPinnedRef.current = false
                 setOpen(false)
                 item.action?.()
               }}
@@ -5072,7 +5088,7 @@ function StoreView({
           boxSizing: 'border-box',
         }}
       >
-        <div style={{ ...styles.container, position: 'relative', padding: isMobile ? '0 10px' : styles.container.padding, boxSizing: 'border-box' }}>
+        <div style={{ ...styles.container, position: 'relative', maxWidth: isMobile ? 'none' : styles.container.maxWidth, width: '100%', padding: isMobile ? '0 8px' : styles.container.padding, boxSizing: 'border-box' }}>
           <div
             style={{
               minHeight: isMobile ? 76 : 82,
@@ -5090,7 +5106,7 @@ function StoreView({
                   onClick={() => setMobileMenuOpen(true)}
                   style={{ background: 'transparent', border: 'none', color: '#fff', cursor: 'pointer', padding: 0 }}
                 >
-                  <Menu size={34} />
+                  <Menu size={30} />
                 </button>
               ) : null}
 
@@ -5098,9 +5114,9 @@ function StoreView({
                 type="button"
                 aria-label="Ir al inicio"
                 onClick={goHome}
-                style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer' }}
+                style={{ border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', maxWidth: isMobile ? 176 : 'none', overflow: 'hidden' }}
               >
-                <DenimClickLogo variant="light" size={isMobile ? 'xs' : 'md'} />
+                <DenimClickLogo variant="light" size={isMobile ? 'mobile' : 'md'} />
               </button>
             </div>
 
@@ -5147,7 +5163,7 @@ function StoreView({
               </nav>
             ) : null}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 10, flex: '0 0 auto' }}>
               {isMobile ? (
                 <TopHelpMenu
                   isMobile={true}
@@ -5165,8 +5181,8 @@ function StoreView({
                 aria-label="Abrir bolsa de apartados"
                 onClick={() => setBagOpen(true)}
                 style={{
-                  width: isMobile ? 44 : 52,
-                  height: isMobile ? 44 : 52,
+                  width: isMobile ? 40 : 52,
+                  height: isMobile ? 40 : 52,
                   borderRadius: 999,
                   border: '1px solid rgba(255,255,255,.16)',
                   background: '#fff',
@@ -5298,12 +5314,12 @@ function StoreView({
 
       {isHomeView ? (
         <>
-          <section style={{ padding: 0, background: '#111315' }}>
+          <section style={{ padding: 0, background: '#111315', width: '100vw', marginLeft: 'calc(50% - 50vw)' }}>
             <div style={{ maxWidth: 'none', margin: 0, padding: 0 }}>
               <div
                 style={{
                   position: 'relative',
-                  minHeight: isMobile ? 'calc(100vh - 76px)' : 680,
+                  minHeight: isMobile ? 'calc(100svh - 76px)' : 680,
                   overflow: 'hidden',
                   background: '#111315',
                   color: '#fff',
@@ -5376,36 +5392,47 @@ function StoreView({
           </section>
 
           <section style={{ padding: isMobile ? '10px 0 28px' : '18px 0 38px' }}>
-            <div style={styles.container}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'end', marginBottom: 16 }}>
+            <div style={isMobile ? { maxWidth: 'none', margin: 0, padding: '0 0 0 18px', overflow: 'hidden' } : styles.container}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'end', marginBottom: 16, paddingRight: isMobile ? 18 : 0 }}>
                 <div>
                   <h2 style={{ margin: '6px 0 0', fontSize: isMobile ? 30 : 42 }}>Productos destacados</h2>
                 </div>
               </div>
 
               <div
+                className={isMobile ? 'featured-mobile-window' : undefined}
                 style={{
-                  display: 'grid',
-                  gap: isMobile ? 12 : 22,
-                  gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(3, minmax(0, 1fr))',
-                  alignItems: 'start',
+                  display: isMobile ? 'block' : 'grid',
+                  overflow: isMobile ? 'hidden' : 'visible',
                 }}
               >
-                {topProducts.map((product) => (
-                  <HomeFeaturedProductCard
-                    key={product.id}
-                    product={product}
-                    isMobile={isMobile}
-                    onOpenGallery={(prod, imageIndex = 0) =>
-                      setGallery({
-                        open: true,
-                        product: prod,
-                        imageIndex,
-                      })
-                    }
-                    onOpenQuickView={(prod) => setQuickViewProduct(prod)}
-                  />
-                ))}
+                <div
+                  className={isMobile ? 'featured-mobile-track' : undefined}
+                  style={{
+                    display: isMobile ? 'flex' : 'grid',
+                    gap: isMobile ? 14 : 22,
+                    gridTemplateColumns: isMobile ? undefined : 'repeat(3, minmax(0, 1fr))',
+                    alignItems: 'start',
+                    width: isMobile ? 'max-content' : 'auto',
+                    animationDuration: isMobile ? Math.max(10, topProducts.length * 4) + 's' : undefined,
+                  }}
+                >
+                  {topProducts.map((product) => (
+                    <HomeFeaturedProductCard
+                      key={product.id}
+                      product={product}
+                      isMobile={isMobile}
+                      onOpenGallery={(prod, imageIndex = 0) =>
+                        setGallery({
+                          open: true,
+                          product: prod,
+                          imageIndex,
+                        })
+                      }
+                      onOpenQuickView={(prod) => setQuickViewProduct(prod)}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           </section>
