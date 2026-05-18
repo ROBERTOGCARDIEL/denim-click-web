@@ -5345,7 +5345,7 @@ function StoreView({
         customFits={customFits}
       />
 
-      {isHomeView ? (
+      {isHomeView && !showHomeCatalog ? (
         <>
           <section style={{ padding: 0, background: '#111315', width: '100vw', marginLeft: 'calc(50% - 50vw)' }}>
             <div style={{ maxWidth: 'none', margin: 0, padding: 0 }}>
