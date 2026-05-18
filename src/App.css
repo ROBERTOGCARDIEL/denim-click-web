@@ -192,30 +192,6 @@
 
 .featured-mobile-track {
   will-change: transform;
-  animation-name: denim-featured-auto-slide;
-  animation-timing-function: ease-in-out;
-  animation-iteration-count: infinite;
-}
-
-.featured-mobile-track:hover,
-.featured-mobile-track:focus-within,
-.featured-mobile-track:active {
-  animation-play-state: paused;
-}
-
-@keyframes denim-featured-auto-slide {
-  0%, 18% {
-    transform: translateX(0);
-  }
-  34%, 52% {
-    transform: translateX(calc(-100vw + 22px));
-  }
-  68%, 86% {
-    transform: translateX(calc(-200vw + 44px));
-  }
-  100% {
-    transform: translateX(0);
-  }
 }
 
 @media (max-width: 720px) {

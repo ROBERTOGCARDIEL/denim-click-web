@@ -4667,7 +4667,7 @@ function HelpInfoSection({ isMobile }) {
                 <p style={{ margin: 0, color: '#9a6b16', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Informacion</p>
                 <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 26 : 32 }}>Quienes somos</h2>
                 <p style={{ margin: '10px 0 0', color: '#4b5563', lineHeight: 1.65 }}>
-                  En Denim Click somos una tienda especializada en mezclilla y moda casual, enfocada en ayudarte a comprar mejor y vender más. Ofrecemos precios por pieza y mayoreo, con información clara para que revises disponibilidad y hagas tus apartados de forma fácil y segura. Nuestro objetivo es que tomes decisiones rápidas, con confianza, y aproveches cada oportunidad para crecer tu negocio.
+                  En Denim Click somos una tienda especializada en mezclilla y moda casual, enfocada en ayudarte a comprar mejor y vender mas. Usamos tecnologia para brindarte un servicio mas rapido, claro y seguro: puedes revisar disponibilidad, calcular precios por pieza o mayoreo y hacer tus apartados con mayor confianza. Nuestro objetivo es que tomes decisiones rapidas y aproveches cada oportunidad para crecer tu negocio.
                 </p>
               </div>
             </div>
@@ -4967,6 +4967,9 @@ function StoreView({
   const [quickViewProduct, setQuickViewProduct] = useState(null)
   const [page, setPage] = useState(1)
   const [promoIndex, setPromoIndex] = useState(0)
+  const [featuredIndex, setFeaturedIndex] = useState(0)
+  const [featuredPaused, setFeaturedPaused] = useState(false)
+  const featuredResumeRef = useRef(null)
 
   useEffect(() => {
     if (specialClientSession?.active) setLoginOpen(false)
@@ -5058,6 +5061,36 @@ function StoreView({
     const id = window.setInterval(() => setPromoIndex((prev) => (prev + 1) % promoProducts.length), PROMO_ROTATE_MS)
     return () => window.clearInterval(id)
   }, [isHomeView, promoProducts.length])
+
+  useEffect(() => {
+    if (!isHomeView || !isMobile || topProducts.length <= 1 || featuredPaused) return undefined
+    const id = window.setInterval(() => {
+      setFeaturedIndex((prev) => (prev + 1) % topProducts.length)
+    }, 3600)
+    return () => window.clearInterval(id)
+  }, [featuredPaused, isHomeView, isMobile, topProducts.length])
+
+  useEffect(() => {
+    if (featuredIndex >= topProducts.length) setFeaturedIndex(0)
+  }, [featuredIndex, topProducts.length])
+
+  useEffect(() => {
+    return () => {
+      if (featuredResumeRef.current) window.clearTimeout(featuredResumeRef.current)
+    }
+  }, [])
+
+  const pauseFeaturedCarousel = () => {
+    if (!isMobile) return
+    setFeaturedPaused(true)
+    if (featuredResumeRef.current) window.clearTimeout(featuredResumeRef.current)
+  }
+
+  const resumeFeaturedCarouselSoon = () => {
+    if (!isMobile) return
+    if (featuredResumeRef.current) window.clearTimeout(featuredResumeRef.current)
+    featuredResumeRef.current = window.setTimeout(() => setFeaturedPaused(false), 1600)
+  }
 
   const goHome = () => {
     setStoreAudience('Todo')
@@ -5408,13 +5441,18 @@ function StoreView({
               >
                 <div
                   className={isMobile ? 'featured-mobile-track' : undefined}
+                  onTouchStart={pauseFeaturedCarousel}
+                  onTouchEnd={resumeFeaturedCarouselSoon}
+                  onMouseEnter={pauseFeaturedCarousel}
+                  onMouseLeave={resumeFeaturedCarouselSoon}
                   style={{
                     display: isMobile ? 'flex' : 'grid',
                     gap: isMobile ? 14 : 22,
                     gridTemplateColumns: isMobile ? undefined : 'repeat(3, minmax(0, 1fr))',
                     alignItems: 'start',
                     width: isMobile ? 'max-content' : 'auto',
-                    animationDuration: isMobile ? Math.max(10, topProducts.length * 4) + 's' : undefined,
+                    transform: isMobile ? 'translateX(calc(-' + featuredIndex * 100 + 'vw + ' + featuredIndex * 22 + 'px))' : undefined,
+                    transition: isMobile ? 'transform .55s ease' : undefined,
                   }}
                 >
                   {topProducts.map((product) => (
