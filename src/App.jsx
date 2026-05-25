@@ -1979,22 +1979,40 @@ function ProductMediaCarousel({
             transition: 'transform .28s ease',
           }}
         >
-          {images.map((image, idx) => (
-            <img
-              key={image + idx}
-              src={image}
-              alt={product.name}
-              loading={idx === 0 && eagerFirstImage ? 'eager' : 'lazy'}
-              decoding="async"
-              fetchPriority={idx === 0 && eagerFirstImage ? 'high' : 'low'}
-              style={{
-                width: '100%',
-                height: '100%',
-                flex: '0 0 100%',
-                objectFit: 'cover',
-              }}
-            />
-          ))}
+          {images.map((image, idx) => {
+            const distance = Math.abs(idx - imageIndex)
+            const wrapDistance = Math.abs(images.length - distance)
+            const nearActiveSlide = Math.min(distance, wrapDistance) <= 1
+            const shouldRenderSlide = images.length <= 3 || nearActiveSlide || (!isMobile && variant === 'card')
+
+            return shouldRenderSlide ? (
+              <img
+                key={image + idx}
+                src={image}
+                alt={product.name}
+                loading={idx === 0 && eagerFirstImage ? 'eager' : 'lazy'}
+                decoding="async"
+                fetchPriority={idx === 0 && eagerFirstImage ? 'high' : 'low'}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  flex: '0 0 100%',
+                  objectFit: 'cover',
+                }}
+              />
+            ) : (
+              <div
+                key={image + idx}
+                aria-hidden="true"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  flex: '0 0 100%',
+                  background: '#ebe6dc',
+                }}
+              />
+            )
+          })}
         </div>
       ) : (
         <div style={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center' }}>
@@ -5020,6 +5038,7 @@ function StoreView({
   loginSpecialClient,
   logoutSpecialClient,
   getCartUnitPrice,
+  fetchProductImages,
 }) {
   const [openMegaMenu, setOpenMegaMenu] = useState(false)
   const [megaAudience, setMegaAudience] = useState('Hombre')
@@ -5072,6 +5091,44 @@ function StoreView({
     setOrderStatusOpen(true)
     setHelpMenuOpen(false)
   }
+
+  const loadFullProductImages = useCallback((product, afterLoad) => {
+    if (!product?.id || !fetchProductImages) return
+    if (Array.isArray(product.images) && product.images.length > 1) return
+
+    fetchProductImages(product.id).then((images) => {
+      if (!Array.isArray(images) || images.length <= 1) return
+      afterLoad({ ...product, images })
+    })
+  }, [fetchProductImages])
+
+  const openQuickViewProduct = useCallback((product) => {
+    if (!product) return
+    setQuickViewProduct(product)
+    loadFullProductImages(product, (hydratedProduct) => {
+      setQuickViewProduct((current) =>
+        current && String(current.id) === String(hydratedProduct.id)
+          ? hydratedProduct
+          : current
+      )
+    })
+  }, [loadFullProductImages])
+
+  const openGalleryProduct = useCallback((product, imageIndex = 0) => {
+    if (!product) return
+    setGallery({
+      open: true,
+      product,
+      imageIndex,
+    })
+    loadFullProductImages(product, (hydratedProduct) => {
+      setGallery((current) =>
+        current.open && current.product && String(current.product.id) === String(hydratedProduct.id)
+          ? { ...current, product: hydratedProduct }
+          : current
+      )
+    })
+  }, [loadFullProductImages, setGallery])
 
   const scrollToHelpSection = () => {
     setHelpMenuOpen(false)
@@ -5538,14 +5595,8 @@ function StoreView({
                       key={product.id}
                       product={product}
                       isMobile={isMobile}
-                      onOpenGallery={(prod, imageIndex = 0) =>
-                        setGallery({
-                          open: true,
-                          product: prod,
-                          imageIndex,
-                        })
-                      }
-                      onOpenQuickView={(prod) => setQuickViewProduct(prod)}
+                      onOpenGallery={openGalleryProduct}
+                      onOpenQuickView={openQuickViewProduct}
                     />
                   ))}
                 </div>
@@ -5630,14 +5681,8 @@ function StoreView({
                   selectedConfig={selectedConfig}
                   setSelectedConfig={setSelectedConfig}
                   onAddToCart={addToCart}
-                  onOpenGallery={(prod, imageIndex = 0) =>
-                    setGallery({
-                      open: true,
-                      product: prod,
-                      imageIndex,
-                    })
-                  }
-                  onOpenQuickView={(prod) => setQuickViewProduct(prod)}
+                  onOpenGallery={openGalleryProduct}
+                  onOpenQuickView={openQuickViewProduct}
                   specialClientSession={specialClientSession}
                   isMobile={isMobile}
                 />
@@ -5670,13 +5715,7 @@ function StoreView({
         onAddToCart={addToCart}
         onAddPackageToCart={addPackageToCart}
         onClose={() => setQuickViewProduct(null)}
-        onOpenGallery={(prod, imageIndex = 0) =>
-          setGallery({
-            open: true,
-            product: prod,
-            imageIndex,
-          })
-        }
+        onOpenGallery={openGalleryProduct}
         specialClientSession={specialClientSession}
         totalPieces={totalPieces}
         getCartUnitPrice={getCartUnitPrice}
@@ -6382,6 +6421,7 @@ export default function App() {
 
   const [specialCode, setSpecialCode] = useState('')
   const [specialClientSession, setSpecialClientSession] = useState(null)
+  const productImagesCacheRef = useRef(new Map())
 
   async function fetchProducts() {
     const { data, error } = await supabase
@@ -6402,6 +6442,12 @@ export default function App() {
   }
 
   async function fetchProductImages(productId) {
+    const cacheKey = String(productId || '')
+    if (!cacheKey) return []
+    if (productImagesCacheRef.current.has(cacheKey)) {
+      return productImagesCacheRef.current.get(cacheKey)
+    }
+
     const { data, error } = await supabase
       .from('products')
       .select('id,images,images_json')
@@ -6409,16 +6455,22 @@ export default function App() {
       .single()
     if (error || !data) return []
 
-    if (Array.isArray(data.images_json)) return data.images_json.filter(Boolean)
-    if (typeof data.images_json === 'string' && data.images_json.trim()) {
+    let images = []
+    if (Array.isArray(data.images_json)) {
+      images = data.images_json.filter(Boolean)
+    } else if (typeof data.images_json === 'string' && data.images_json.trim()) {
       try {
         const parsed = JSON.parse(data.images_json)
-        return Array.isArray(parsed) ? parsed.filter(Boolean) : []
+        images = Array.isArray(parsed) ? parsed.filter(Boolean) : []
       } catch {
-        return data.images ? [data.images] : []
+        images = data.images ? [data.images] : []
       }
+    } else {
+      images = data.images ? [data.images] : []
     }
-    return data.images ? [data.images] : []
+
+    productImagesCacheRef.current.set(cacheKey, images)
+    return images
   }
 
   async function fetchSpecialClients() {
@@ -6919,6 +6971,7 @@ export default function App() {
           loginSpecialClient={loginSpecialClient}
           logoutSpecialClient={logoutSpecialClient}
           getCartUnitPrice={getCartUnitPrice}
+          fetchProductImages={fetchProductImages}
         />
       ) : isAdminAuthenticated ? (
         <>
