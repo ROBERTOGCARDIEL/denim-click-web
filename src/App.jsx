@@ -1912,16 +1912,70 @@ function ProductMediaCarousel({
   variant = 'card',
   onOpenGallery,
   onOpenQuickView,
+  fetchProductImages,
 }) {
-  const images = Array.isArray(product.images) && product.images.length ? product.images : []
+  const initialImages = Array.isArray(product.images) && product.images.length ? product.images : []
+  const [loadedImages, setLoadedImages] = useState(initialImages)
+  const images = loadedImages.length ? loadedImages : initialImages
   const [imageIndex, setImageIndex] = useState(0)
   const eagerFirstImage = variant === 'quick' || (!isMobile && variant !== 'card')
   const touchStartX = useRef(0)
   const swipedRef = useRef(false)
+  const carouselRef = useRef(null)
+  const loadingFullImagesRef = useRef(false)
 
   useEffect(() => {
     setImageIndex(0)
-  }, [product.id])
+    setLoadedImages(Array.isArray(product.images) && product.images.length ? product.images : [])
+    loadingFullImagesRef.current = false
+  }, [product.id, product.images])
+
+  const ensureFullImages = () => {
+    if (!fetchProductImages || !product?.id || loadingFullImagesRef.current || images.length > 1) return
+    loadingFullImagesRef.current = true
+    fetchProductImages(product.id)
+      .then((fullImages) => {
+        if (Array.isArray(fullImages) && fullImages.length > images.length) {
+          setLoadedImages(fullImages)
+        }
+      })
+      .finally(() => {
+        loadingFullImagesRef.current = false
+      })
+  }
+
+  useEffect(() => {
+    if (!isMobile || variant !== 'card' || !fetchProductImages || images.length > 1) return undefined
+    const node = carouselRef.current
+    if (!node) return undefined
+
+    const loadVisibleImages = () => {
+      if (loadingFullImagesRef.current || images.length > 1) return
+      loadingFullImagesRef.current = true
+      fetchProductImages(product.id)
+        .then((fullImages) => {
+          if (Array.isArray(fullImages) && fullImages.length > images.length) {
+            setLoadedImages(fullImages)
+          }
+        })
+        .finally(() => {
+          loadingFullImagesRef.current = false
+        })
+    }
+
+    let delayId = null
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting)) return
+      delayId = window.setTimeout(loadVisibleImages, 120)
+      observer.disconnect()
+    }, { rootMargin: '220px 0px' })
+
+    observer.observe(node)
+    return () => {
+      if (delayId) window.clearTimeout(delayId)
+      observer.disconnect()
+    }
+  }, [isMobile, variant, fetchProductImages, product.id, images.length])
 
   const goTo = (nextIndex) => {
     if (!images.length) return
@@ -1933,15 +1987,17 @@ function ProductMediaCarousel({
       swipedRef.current = false
       return
     }
+    const hydratedProduct = images.length > initialImages.length ? { ...product, images } : product
     if (isMobile) {
-      onOpenQuickView(product)
+      onOpenQuickView(hydratedProduct)
       return
     }
-    onOpenGallery(product, imageIndex)
+    onOpenGallery(hydratedProduct, imageIndex)
   }
 
   return (
     <div
+      ref={carouselRef}
       role="button"
       tabIndex={0}
       aria-label={'Ver detalle de ' + product.name}
@@ -1952,6 +2008,7 @@ function ProductMediaCarousel({
       onTouchStart={(event) => {
         touchStartX.current = event.touches?.[0]?.clientX || 0
         swipedRef.current = false
+        ensureFullImages()
       }}
       onTouchEnd={(event) => {
         const endX = event.changedTouches?.[0]?.clientX || touchStartX.current
@@ -2109,7 +2166,7 @@ function ProductMediaCarousel({
           aria-label={'Agregar rapido ' + product.name}
           onClick={(event) => {
             event.stopPropagation()
-            onOpenQuickView(product)
+            onOpenQuickView(images.length > initialImages.length ? { ...product, images } : product)
           }}
           style={{
             position: 'absolute',
@@ -2160,6 +2217,7 @@ function ProductCard({
   onOpenQuickView,
   specialClientSession,
   isMobile,
+  fetchProductImages,
 }) {
   const current = selectedConfig[product.id] || { size: '', quantity: 0 }
   const activeSize = current.size
@@ -2216,6 +2274,7 @@ function ProductCard({
         isMobile={isMobile}
         onOpenGallery={onOpenGallery}
         onOpenQuickView={onOpenQuickView}
+        fetchProductImages={fetchProductImages}
       />
 
       <div style={{ padding: isMobile ? '11px 0 18px' : 18 }}>
@@ -2422,7 +2481,7 @@ function ProductCard({
   )
 }
 
-function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuickView }) {
+function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuickView, fetchProductImages }) {
   return (
     <article
       style={{
@@ -2440,6 +2499,7 @@ function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuick
         isMobile={isMobile}
         onOpenGallery={onOpenGallery}
         onOpenQuickView={onOpenQuickView}
+        fetchProductImages={fetchProductImages}
       />
       <div style={{ padding: isMobile ? '12px 0 18px' : 18 }}>
         <button
@@ -5597,6 +5657,7 @@ function StoreView({
                       isMobile={isMobile}
                       onOpenGallery={openGalleryProduct}
                       onOpenQuickView={openQuickViewProduct}
+                      fetchProductImages={fetchProductImages}
                     />
                   ))}
                 </div>
@@ -5685,6 +5746,7 @@ function StoreView({
                   onOpenQuickView={openQuickViewProduct}
                   specialClientSession={specialClientSession}
                   isMobile={isMobile}
+                  fetchProductImages={fetchProductImages}
                 />
                 ))}
               </div>
