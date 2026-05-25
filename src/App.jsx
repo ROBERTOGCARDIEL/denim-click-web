@@ -599,22 +599,21 @@ function normalizeProduct(row) {
   }
 }
 
-function productToDb(product) {
+function productToDb(product, options = {}) {
+  const includeImages = options.includeImages !== false
   const stockTotal = totalStock(product.stock)
   const productForDescription = {
     ...product,
     offer_started_at: product.is_offer ? product.offer_started_at || new Date().toISOString() : product.offer_started_at || '',
   }
 
-  return {
+  const payload = {
     name: product.name,
     description: composeProductDescription(productForDescription),
     category: product.category,
     subcategory: product.subcategory || '',
     audience: product.audience,
     brand: product.brand || 'Otras',
-    images: product.images?.[0] || '',
-    images_json: product.images || [],
     sizes: (product.sizes || []).join(','),
     stock: stockTotal,
     stock_json: product.stock || {},
@@ -629,6 +628,59 @@ function productToDb(product) {
     sales_count: Number(product.sales_count || 0),
     category_order: Number(product.category_order || 0),
   }
+
+  if (includeImages) {
+    payload.images = product.images?.[0] || ''
+    payload.images_json = product.images || []
+  }
+
+  return payload
+}
+
+function imagesAreEqual(left = [], right = []) {
+  if (!Array.isArray(left) || !Array.isArray(right)) return false
+  if (left.length !== right.length) return false
+  return left.every((item, index) => item === right[index])
+}
+
+function getFriendlyProductError(error) {
+  const message = String(error?.message || error || '')
+  if (message.toLowerCase().includes('statement timeout')) {
+    return 'La base tardo demasiado en responder. Ya optimizamos el guardado para no reenviar fotos si no cambiaron; intenta guardar de nuevo.'
+  }
+  return message
+}
+
+function compressImageFile(file, options = {}) {
+  const maxSize = Number(options.maxSize || 1400)
+  const quality = Number(options.quality || 0.76)
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const original = String(reader.result || '')
+      const img = new Image()
+      img.onload = () => {
+        try {
+          const scale = Math.min(1, maxSize / Math.max(img.width || 1, img.height || 1))
+          const width = Math.max(1, Math.round((img.width || 1) * scale))
+          const height = Math.max(1, Math.round((img.height || 1) * scale))
+          const canvas = document.createElement('canvas')
+          canvas.width = width
+          canvas.height = height
+          const context = canvas.getContext('2d')
+          context.drawImage(img, 0, 0, width, height)
+          resolve(canvas.toDataURL('image/webp', quality))
+        } catch {
+          resolve(original)
+        }
+      }
+      img.onerror = () => resolve(original)
+      img.src = original
+    }
+    reader.onerror = () => resolve('')
+    reader.readAsDataURL(file)
+  })
 }
 
 function buildEmptyProduct() {
@@ -2077,16 +2129,12 @@ function ProductCard({
   onOpenGallery,
   onOpenQuickView,
   specialClientSession,
-  totalPieces,
   isMobile,
-  getCartUnitPrice,
 }) {
   const current = selectedConfig[product.id] || { size: '', quantity: 0 }
   const activeSize = current.size
   const stockForSelected = Number(product.stock?.[activeSize] || 0)
   const availableStock = totalStock(product.stock)
-  const specialPriceUnlocked = specialClientSession?.active && (specialClientSession.client_tier !== 'Plata' || Number(totalPieces || 0) >= 10)
-  const displayPrice = specialPriceUnlocked ? Number(getCartUnitPrice?.(product) || getProductBasePrice(product)) : getProductBasePrice(product)
 
   const setSize = (size) => {
     const available = Number(product.stock?.[size] || 0)
@@ -2172,19 +2220,6 @@ function ProductCard({
             {product.name}
           </h4>
         </button>
-
-        <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: isMobile ? 12 : 16 }}>
-          {product.brand} · {product.category}{product.subcategory ? ' · ' + product.subcategory : ''}
-        </p>
-
-        <p style={{ margin: '8px 0 0', fontSize: isMobile ? 15 : 20, fontWeight: 900 }}>
-          {mxn(displayPrice)}
-          {!specialClientSession?.active && product.price_tier3 < product.price ? (
-            <span style={{ color: '#9a6b16', fontSize: isMobile ? 12 : 14, marginLeft: 8 }}>
-              mayoreo desde {mxn(product.price_tier3)}
-            </span>
-          ) : null}
-        </p>
 
         {isMobile ? (
           <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
@@ -3215,16 +3250,7 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
     const list = Array.from(files || []).filter((file) => file.type.startsWith('image/'))
     if (!list.length) return
 
-    Promise.all(
-      list.map(
-        (file) =>
-          new Promise((resolve) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(String(reader.result || ''))
-            reader.readAsDataURL(file)
-          })
-      )
-    ).then((images) => {
+    Promise.all(list.map((file) => compressImageFile(file))).then((images) => {
       setDraft((prev) => ({ ...prev, images: [...(prev.images || []), ...images].filter(Boolean) }))
     })
   }
@@ -3241,13 +3267,23 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
   }
 
   const addSize = () => {
-    const value = newSize.trim()
-    if (!value || draft.sizes.includes(value)) return
-    setDraft((prev) => ({
-      ...prev,
-      sizes: [...prev.sizes, value],
-      stock: { ...prev.stock, [value]: 0 },
-    }))
+    const values = newSize
+      .split(/[\s,]+/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+    if (!values.length) return
+
+    setDraft((prev) => {
+      const nextSizes = [...prev.sizes]
+      const nextStock = { ...prev.stock }
+      values.forEach((value) => {
+        if (!nextSizes.includes(value)) {
+          nextSizes.push(value)
+          nextStock[value] = 0
+        }
+      })
+      return { ...prev, sizes: nextSizes, stock: nextStock }
+    })
     setNewSize('')
   }
 
@@ -3496,7 +3532,18 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
         </div>
 
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-          <input style={styles.input} value={newSize} onChange={(e) => setNewSize(e.target.value)} placeholder="Nueva talla" />
+          <input
+            style={styles.input}
+            value={newSize}
+            onChange={(e) => setNewSize(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                addSize()
+              }
+            }}
+            placeholder="Nueva talla"
+          />
           <button type="button" style={styles.buttonSecondary} onClick={addSize}>
             <Plus size={16} />
             Agregar
@@ -5561,9 +5608,7 @@ function StoreView({
                   }
                   onOpenQuickView={(prod) => setQuickViewProduct(prod)}
                   specialClientSession={specialClientSession}
-                  totalPieces={totalPieces}
                   isMobile={isMobile}
-                  getCartUnitPrice={getCartUnitPrice}
                 />
                 ))}
               </div>
@@ -5865,7 +5910,7 @@ function AdminView({
     setLoading(false)
 
     if (error) {
-      alert('No se pudo crear el producto: ' + error.message)
+      alert('No se pudo crear el producto: ' + getFriendlyProductError(error))
       return
     }
 
@@ -5896,12 +5941,14 @@ function AdminView({
 
     setLoading(true)
     const clean = prepareDraftForSave(editingDraft)
-    const payload = productToDb(clean)
+    const originalProduct = products.find((product) => String(product.id) === String(editingId))
+    const includeImages = !originalProduct || !imagesAreEqual(originalProduct.images || [], clean.images || [])
+    const payload = productToDb(clean, { includeImages })
     const { error } = await supabase.from('products').update(payload).eq('id', editingId)
     setLoading(false)
 
     if (error) {
-      alert('No se pudo actualizar el producto: ' + error.message)
+      alert('No se pudo actualizar el producto: ' + getFriendlyProductError(error))
       return
     }
 
