@@ -651,36 +651,46 @@ function getFriendlyProductError(error) {
   return message
 }
 
-function compressImageFile(file, options = {}) {
-  const maxSize = Number(options.maxSize || 1400)
-  const quality = Number(options.quality || 0.76)
+function compressImageSource(source, options = {}) {
+  const maxSize = Number(options.maxSize || 1000)
+  const quality = Number(options.quality || 0.68)
+  const original = String(source || '')
+  if (!original) return Promise.resolve('')
 
   return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const original = String(reader.result || '')
-      const img = new Image()
-      img.onload = () => {
-        try {
-          const scale = Math.min(1, maxSize / Math.max(img.width || 1, img.height || 1))
-          const width = Math.max(1, Math.round((img.width || 1) * scale))
-          const height = Math.max(1, Math.round((img.height || 1) * scale))
-          const canvas = document.createElement('canvas')
-          canvas.width = width
-          canvas.height = height
-          const context = canvas.getContext('2d')
-          context.drawImage(img, 0, 0, width, height)
-          resolve(canvas.toDataURL('image/webp', quality))
-        } catch {
-          resolve(original)
-        }
+    const img = new Image()
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, maxSize / Math.max(img.width || 1, img.height || 1))
+        const width = Math.max(1, Math.round((img.width || 1) * scale))
+        const height = Math.max(1, Math.round((img.height || 1) * scale))
+        const canvas = document.createElement('canvas')
+        canvas.width = width
+        canvas.height = height
+        const context = canvas.getContext('2d')
+        context.drawImage(img, 0, 0, width, height)
+        resolve(canvas.toDataURL('image/webp', quality))
+      } catch {
+        resolve(original)
       }
-      img.onerror = () => resolve(original)
-      img.src = original
     }
+    img.onerror = () => resolve(original)
+    img.src = original
+  })
+}
+
+function compressImageFile(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = () => compressImageSource(String(reader.result || '')).then(resolve)
     reader.onerror = () => resolve('')
     reader.readAsDataURL(file)
   })
+}
+
+async function compressProductImages(images = []) {
+  const cleanImages = (Array.isArray(images) ? images : []).filter(Boolean).slice(0, 12)
+  return Promise.all(cleanImages.map((image) => compressImageSource(image)))
 }
 
 function buildEmptyProduct() {
@@ -5833,6 +5843,8 @@ function StoreView({
 
 function AdminView({
   products,
+  setProducts,
+  fetchProductImages,
   fetchProducts,
   loading,
   setLoading,
@@ -5905,8 +5917,9 @@ function AdminView({
 
     setLoading(true)
     const clean = prepareDraftForSave(newProductDraft)
-    const payload = productToDb(clean)
-    const { data, error } = await supabase.from('products').insert([payload]).select()
+    const imageOptimizedProduct = { ...clean, images: await compressProductImages(clean.images) }
+    const payload = productToDb(imageOptimizedProduct)
+    const { data, error } = await supabase.from('products').insert([payload]).select(PRODUCT_LIST_COLUMNS).single()
     setLoading(false)
 
     if (error) {
@@ -5914,23 +5927,29 @@ function AdminView({
       return
     }
 
-    const inserted = data?.[0]
+    const inserted = data
     if (inserted?.id) {
+      setProducts((prev) => [normalizeProduct(inserted), ...prev.filter((product) => String(product.id) !== String(inserted.id))])
       const defaultTierPrices = getDefaultTierPricesForProduct(clean, specialPriceRules)
-      for (const tier of CLIENT_TIERS) {
-        await supabase.from('product_customer_prices').insert([{ product_id: inserted.id, client_tier: tier, price: Number(defaultTierPrices[tier] || 0) }])
-      }
+      await Promise.all(
+        CLIENT_TIERS.map((tier) =>
+          supabase.from('product_customer_prices').insert([{ product_id: inserted.id, client_tier: tier, price: Number(defaultTierPrices[tier] || 0) }])
+        )
+      )
       await fetchTierPrices()
     }
 
     setNewProductDraft(buildEmptyProduct())
     setShowProductForm(false)
-    await fetchProducts()
   }
 
-  const startEdit = (product) => {
+  const startEdit = async (product) => {
     setEditingId(product.id)
     setEditingDraft({ ...product, customCategory: '', customSubcategory: '', customBrand: '' })
+    const images = await fetchProductImages(product.id)
+    if (images.length) {
+      setEditingDraft((prev) => (prev && String(prev.id) === String(product.id) ? { ...prev, images } : prev))
+    }
   }
 
   const saveEdit = async () => {
@@ -5943,8 +5962,14 @@ function AdminView({
     const clean = prepareDraftForSave(editingDraft)
     const originalProduct = products.find((product) => String(product.id) === String(editingId))
     const includeImages = !originalProduct || !imagesAreEqual(originalProduct.images || [], clean.images || [])
-    const payload = productToDb(clean, { includeImages })
-    const { error } = await supabase.from('products').update(payload).eq('id', editingId)
+    const imageOptimizedProduct = includeImages ? { ...clean, images: await compressProductImages(clean.images) } : clean
+    const payload = productToDb(imageOptimizedProduct, { includeImages })
+    const { data, error } = await supabase
+      .from('products')
+      .update(payload)
+      .eq('id', editingId)
+      .select(PRODUCT_LIST_COLUMNS)
+      .single()
     setLoading(false)
 
     if (error) {
@@ -5952,9 +5977,16 @@ function AdminView({
       return
     }
 
+    const nextProduct = normalizeProduct(data)
+    setProducts((prev) =>
+      prev.map((product) =>
+        String(product.id) === String(editingId)
+          ? { ...nextProduct, images: includeImages ? imageOptimizedProduct.images : product.images }
+          : product
+      )
+    )
     setEditingId(null)
     setEditingDraft(null)
-    await fetchProducts()
   }
 
   const toggleActive = async (id, next) => {
@@ -5963,7 +5995,7 @@ function AdminView({
       alert('No se pudo cambiar el estado: ' + error.message)
       return
     }
-    await fetchProducts()
+    setProducts((prev) => prev.map((product) => (String(product.id) === String(id) ? { ...product, active: next } : product)))
   }
 
   const deleteProduct = async (id) => {
@@ -5976,7 +6008,7 @@ function AdminView({
       alert('No se pudo eliminar: ' + error.message)
       return
     }
-    await fetchProducts()
+    setProducts((prev) => prev.filter((product) => String(product.id) !== String(id)))
     await fetchTierPrices()
   }
 
@@ -6330,57 +6362,42 @@ export default function App() {
   const [specialCode, setSpecialCode] = useState('')
   const [specialClientSession, setSpecialClientSession] = useState(null)
 
-  async function fetchProducts(options = {}) {
-    const full = options.full === true || (route === 'admin' && isAdminAuthenticated)
+  async function fetchProducts() {
     const { data, error } = await supabase
       .from('products')
-      .select(full ? '*' : PRODUCT_LIST_COLUMNS)
+      .select(PRODUCT_LIST_COLUMNS)
       .order('created_at', { ascending: false })
     if (error) {
-      alert(`No se pudieron leer los productos: ${error.message}`)
+      if (!products.length) alert(`No se pudieron leer los productos: ${error.message}`)
       return
     }
     const normalized = (data || []).map(normalizeProduct)
     setProducts(normalized)
-    if (!full) {
-      try {
-        localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(normalized))
-      } catch {
-        // The image payload can exceed local storage on some browsers; live data is still used.
-      }
-
-      window.setTimeout(() => fetchProductGalleryImages(), 120)
+    try {
+      localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(normalized))
+    } catch {
+      // Keep live data even when browser storage is full.
     }
   }
 
-  async function fetchProductGalleryImages() {
-    const { data, error } = await supabase.from('products').select('id,images_json')
-    if (error || !Array.isArray(data)) return
+  async function fetchProductImages(productId) {
+    const { data, error } = await supabase
+      .from('products')
+      .select('id,images,images_json')
+      .eq('id', productId)
+      .single()
+    if (error || !data) return []
 
-    const imagesById = new Map()
-    for (const row of data) {
-      let images = []
-      if (Array.isArray(row.images_json)) {
-        images = row.images_json.filter(Boolean)
-      } else if (typeof row.images_json === 'string' && row.images_json.trim()) {
-        try {
-          const parsed = JSON.parse(row.images_json)
-          images = Array.isArray(parsed) ? parsed.filter(Boolean) : []
-        } catch {
-          images = []
-        }
+    if (Array.isArray(data.images_json)) return data.images_json.filter(Boolean)
+    if (typeof data.images_json === 'string' && data.images_json.trim()) {
+      try {
+        const parsed = JSON.parse(data.images_json)
+        return Array.isArray(parsed) ? parsed.filter(Boolean) : []
+      } catch {
+        return data.images ? [data.images] : []
       }
-      if (images.length > 1) imagesById.set(row.id, images)
     }
-
-    if (!imagesById.size) return
-    setProducts((prev) =>
-      prev.map((product) =>
-        imagesById.has(product.id)
-          ? { ...product, images: imagesById.get(product.id) }
-          : product
-      )
-    )
+    return data.images ? [data.images] : []
   }
 
   async function fetchSpecialClients() {
@@ -6930,6 +6947,8 @@ export default function App() {
 
           <AdminView
             products={products}
+            setProducts={setProducts}
+            fetchProductImages={fetchProductImages}
             fetchProducts={fetchProducts}
             loading={loading}
             setLoading={setLoading}
