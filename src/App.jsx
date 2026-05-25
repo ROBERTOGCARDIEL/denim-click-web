@@ -1915,6 +1915,7 @@ function ProductMediaCarousel({
 }) {
   const images = Array.isArray(product.images) && product.images.length ? product.images : []
   const [imageIndex, setImageIndex] = useState(0)
+  const eagerFirstImage = variant === 'quick' || (!isMobile && variant !== 'card')
   const touchStartX = useRef(0)
   const swipedRef = useRef(false)
 
@@ -1983,8 +1984,9 @@ function ProductMediaCarousel({
               key={image + idx}
               src={image}
               alt={product.name}
-              loading="lazy"
+              loading={idx === 0 && eagerFirstImage ? 'eager' : 'lazy'}
               decoding="async"
+              fetchPriority={idx === 0 && eagerFirstImage ? 'high' : 'low'}
               style={{
                 width: '100%',
                 height: '100%',
@@ -4390,8 +4392,17 @@ function OrdersAdmin({ orders, fetchOrders }) {
 
               <div style={{ display: 'grid', gap: 8 }}>
                 {items.map((item, idx) => (
-                  <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', gap: 10, color: '#374151', borderBottom: '1px solid #f3f4f6', paddingBottom: 8 }}>
-                    <span>{item.name} | Talla {item.size} | {item.quantity} pz</span>
+                  <div key={idx} style={{ display: 'grid', gridTemplateColumns: item.image ? '58px 1fr auto' : '1fr auto', alignItems: 'center', gap: 10, color: '#374151', borderBottom: '1px solid #f3f4f6', paddingBottom: 8 }}>
+                    {item.image ? (
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        loading="lazy"
+                        decoding="async"
+                        style={{ width: 58, height: 58, objectFit: 'cover', borderRadius: 10, background: '#f3f4f6' }}
+                      />
+                    ) : null}
+                    <span>{item.name} | Talla {item.size || '-'} | {item.quantity} pz</span>
                     <strong>{mxn(item.total || Number(item.unit_price || 0) * Number(item.quantity || 0))}</strong>
                   </div>
                 ))}
@@ -5026,6 +5037,7 @@ function StoreView({
   const [promoIndex, setPromoIndex] = useState(0)
   const [featuredIndex, setFeaturedIndex] = useState(0)
   const [featuredPaused, setFeaturedPaused] = useState(false)
+  const [heroVideoReady, setHeroVideoReady] = useState(false)
   const featuredResumeRef = useRef(null)
 
   useEffect(() => {
@@ -5118,6 +5130,15 @@ function StoreView({
     const id = window.setInterval(() => setPromoIndex((prev) => (prev + 1) % promoProducts.length), PROMO_ROTATE_MS)
     return () => window.clearInterval(id)
   }, [isHomeView, promoProducts.length])
+
+  useEffect(() => {
+    if (!isHomeView) {
+      setHeroVideoReady(false)
+      return undefined
+    }
+    const id = window.setTimeout(() => setHeroVideoReady(true), isMobile ? 1800 : 250)
+    return () => window.clearTimeout(id)
+  }, [isHomeView, isMobile])
 
   useEffect(() => {
     if (!isHomeView || !isMobile || topProducts.length <= 1 || featuredPaused) return undefined
@@ -5430,14 +5451,14 @@ function StoreView({
                   </div>
                 )}
 
-                {HOME_APARTADO_VIDEO_URL ? (
+                {HOME_APARTADO_VIDEO_URL && heroVideoReady ? (
                   <video
                     src={HOME_APARTADO_VIDEO_URL}
                     autoPlay
                     muted
                     loop
                     playsInline
-                    preload="metadata"
+                    preload={isMobile ? 'none' : 'metadata'}
                     poster={homeHeroProduct && getCover(homeHeroProduct) ? getCover(homeHeroProduct) : undefined}
                     onError={(event) => {
                       event.currentTarget.style.display = 'none'
@@ -6689,6 +6710,7 @@ export default function App() {
       unit_price: getCartItemUnitPrice(item, getCartUnitPrice),
       total: getCartLineTotal(item, getCartUnitPrice),
       package_breakdown: item.packageMode ? item.product.package_breakdown || item.product.package_fit || '' : '',
+      image: getCover(item.product),
     }))
 
     const noteParts = [
