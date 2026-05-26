@@ -223,6 +223,39 @@ function uniqueValues(items) {
   return [...new Set(items.filter(Boolean))]
 }
 
+function productHasVisibleStock(product) {
+  return product?.active !== false && (totalStock(product.stock) > 0 || Number(product.package_stock || 0) > 0)
+}
+
+function getStoreAudiences(products) {
+  const activeAudiences = uniqueValues(
+    products
+      .filter(productHasVisibleStock)
+      .map((product) => product.audience)
+  )
+  const ordered = ['Hombre', 'Dama', 'Niño', 'Accesorios'].filter((audience) => activeAudiences.includes(audience))
+  const hasOffers = products.some((product) => productHasVisibleStock(product) && product.is_offer)
+  return hasOffers ? [...ordered, 'Oferta'] : ordered
+}
+
+function getStoreCategories(products, audience) {
+  return uniqueValues(
+    products
+      .filter(productHasVisibleStock)
+      .filter((product) => audience === 'Todo' || product.audience === audience)
+      .map((product) => product.category)
+  ).filter((category) => category !== 'Playera')
+}
+
+function getStoreBrands(products, audience) {
+  return uniqueValues(
+    products
+      .filter(productHasVisibleStock)
+      .filter((product) => audience === 'Todo' || product.audience === audience)
+      .map((product) => product.brand)
+  )
+}
+
 function getAudienceCategories(audience, customCategories = []) {
   if (audience === 'Todo') {
     return uniqueValues([...Object.values(BASE_CATEGORY_MAP).flat(), ...customCategories])
@@ -1463,22 +1496,16 @@ function DesktopMegaMenu({
   setStoreCategory,
   setStoreBrand,
   setStoreFit,
-  customCategories,
   customFits,
 }) {
   const [hoveredCategory, setHoveredCategory] = useState('')
-  const hasLastUnits = products.some((product) => product.active !== false && (activeAudience === 'Todo' || product.audience === activeAudience) && isLastUnitsProduct(product))
+  const hasLastUnits = products.some((product) => productHasVisibleStock(product) && (activeAudience === 'Todo' || product.audience === activeAudience) && isLastUnitsProduct(product))
   const categories = [
-    ...getAudienceCategories(activeAudience, customCategories).filter((c) => c !== 'Playera'),
+    ...getStoreCategories(products, activeAudience),
     ...(hasLastUnits ? ['Ultimas piezas'] : []),
   ]
-  const brands = uniqueValues([
-    ...BRANDS,
-    ...products
-      .filter((p) => (activeAudience === 'Todo' ? true : p.audience === activeAudience))
-      .map((p) => p.brand),
-  ])
-  const fitList = getFitsForAudience(products, activeAudience, customFits)
+  const brands = getStoreBrands(products, activeAudience)
+  const fitList = getFitsForAudience(products.filter(productHasVisibleStock), activeAudience, customFits)
 
   return (
     <div
@@ -1648,7 +1675,6 @@ function MobileMenu({
   setStoreCategory,
   setStoreBrand,
   setStoreFit,
-  customCategories,
   customFits,
 }) {
   const [step, setStep] = useState('audiences')
@@ -1665,18 +1691,14 @@ function MobileMenu({
 
   if (!open) return null
 
-  const hasLastUnits = products.some((product) => product.active !== false && (selectedAudience === 'Todo' || product.audience === selectedAudience) && isLastUnitsProduct(product))
+  const availableAudiences = getStoreAudiences(products)
+  const hasLastUnits = products.some((product) => productHasVisibleStock(product) && (selectedAudience === 'Todo' || product.audience === selectedAudience) && isLastUnitsProduct(product))
   const categories = [
-    ...getAudienceCategories(selectedAudience, customCategories).filter((c) => c !== 'Playera'),
+    ...getStoreCategories(products, selectedAudience),
     ...(hasLastUnits ? ['Ultimas piezas'] : []),
   ]
-  const brands = uniqueValues([
-    ...BRANDS,
-    ...products
-      .filter((p) => (selectedAudience === 'Todo' ? true : p.audience === selectedAudience))
-      .map((p) => p.brand),
-  ])
-  const fits = getFitsForAudience(products, selectedAudience, customFits)
+  const brands = getStoreBrands(products, selectedAudience)
+  const fits = getFitsForAudience(products.filter(productHasVisibleStock), selectedAudience, customFits)
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 50 }}>
@@ -1726,7 +1748,7 @@ function MobileMenu({
 
         <div style={{ marginTop: 22, display: 'grid', gap: 22 }}>
           {step === 'audiences' &&
-            ['Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta', 'Mejora tu precio'].map((aud) => (
+            availableAudiences.map((aud) => (
               <button
                 key={aud}
                 type="button"
@@ -5078,7 +5100,6 @@ function StoreView({
   setStoreBrand,
   storeFit,
   setStoreFit,
-  customCategories,
   customFits,
   selectedConfig,
   setSelectedConfig,
@@ -5123,8 +5144,8 @@ function StoreView({
     if (specialClientSession?.active) setLoginOpen(false)
   }, [specialClientSession?.active])
 
-  const visibleBrands = uniqueValues([...BRANDS, ...products.map((p) => p.brand)])
-  const visibleCategories = getAudienceCategories(storeAudience, customCategories).filter((c) => c !== 'Playera')
+  const visibleBrands = getStoreBrands(products, storeAudience)
+  const visibleCategories = getStoreCategories(products, storeAudience)
   const activeProducts = useMemo(() => products.filter((p) => p.active), [products])
   const featuredProducts = useMemo(() => activeProducts.filter((p) => getCover(p)), [activeProducts])
   const heroProduct = useMemo(() => {
@@ -5350,7 +5371,7 @@ function StoreView({
 
             {!isMobile ? (
               <nav style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-                {['Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta'].map((aud) => (
+                {getStoreAudiences(products).map((aud) => (
                   <button
                     key={aud}
                     type="button"
@@ -5521,7 +5542,6 @@ function StoreView({
               setStoreCategory={setStoreCategory}
               setStoreBrand={setStoreBrand}
               setStoreFit={setStoreFit}
-              customCategories={customCategories}
               customFits={customFits}
             />
           ) : null}
@@ -5536,7 +5556,6 @@ function StoreView({
         setStoreCategory={setStoreCategory}
         setStoreBrand={setStoreBrand}
         setStoreFit={setStoreFit}
-        customCategories={customCategories}
         customFits={customFits}
       />
 
@@ -6615,14 +6634,6 @@ export default function App() {
     }
   }, [])
 
-  const customCategories = useMemo(() => {
-    return uniqueValues(
-      products
-        .map((p) => p.category)
-        .filter((cat) => !uniqueValues(Object.values(BASE_CATEGORY_MAP).flat()).includes(cat))
-    )
-  }, [products])
-
   const customFits = useMemo(() => {
     return uniqueValues(
       products.map((p) => p.subcategory).filter((sub) => sub && !JEANS_FITS.includes(sub))
@@ -7013,8 +7024,7 @@ export default function App() {
           setStoreBrand={setStoreBrand}
           storeFit={storeFit}
           setStoreFit={setStoreFit}
-          customCategories={customCategories}
-          customFits={customFits}
+            customFits={customFits}
           selectedConfig={selectedConfig}
           setSelectedConfig={setSelectedConfig}
           addToCart={addToCart}
