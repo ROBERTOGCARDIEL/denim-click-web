@@ -75,6 +75,18 @@ const SOCIAL_LINKS = [
 const AUDIENCES = ['Todo', 'Hombre', 'Dama', 'Niño', 'Accesorios', 'Oferta']
 const CLIENT_TIERS = ['Plata', 'Oro', 'Esmeralda', 'Platino', 'Diamante', 'Imperial']
 
+const CLIENT_PRICE_OVERRIDES = [
+  {
+    id: 'alejandro-bandera-606-levis-jeans',
+    client_code: '606',
+    client_name: 'Alejandro Bandera',
+    brand: 'Levi',
+    audience: 'Hombre,Dama',
+    category: 'Jeans',
+    price: 239,
+  },
+]
+
 const SPECIAL_PRICE_RULE_PRESETS = [
   {
     id: 'levis-jeans',
@@ -315,6 +327,25 @@ function productMatchesSpecialRule(product, rule) {
   const combinedText = normalizeRuleText(product.name + ' ' + product.category + ' ' + product.subcategory + ' ' + product.brand)
   const excludeOk = !rule.exclude_text || !combinedText.includes(normalizeRuleText(rule.exclude_text))
   return audienceOk && categoryOk && brandOk && excludeOk
+}
+
+function clientMatchesPriceOverride(client, override) {
+  if (!client || !override) return false
+  const clientCode = normalizeRuleText(client.client_code || client.qr_value || '')
+  const overrideCode = normalizeRuleText(override.client_code || '')
+  const clientName = normalizeRuleText(client.name || '')
+  const overrideName = normalizeRuleText(override.client_name || '')
+  const codeMatches = Boolean(overrideCode && clientCode === overrideCode)
+  const nameMatches = Boolean(overrideName && clientName.includes(overrideName))
+  return codeMatches || nameMatches
+}
+
+function getClientProductPriceOverride(product, client) {
+  if (!product || !client?.active) return 0
+  const override = CLIENT_PRICE_OVERRIDES.find((item) => (
+    clientMatchesPriceOverride(client, item) && productMatchesSpecialRule(product, item)
+  ))
+  return Number(override?.price || 0)
 }
 
 function getDefaultTierPricesForProduct(product, rules = SPECIAL_PRICE_RULE_PRESETS) {
@@ -6656,6 +6687,8 @@ export default function App() {
       const tierName = specialClientSession.client_tier || ''
       const specialUnlocked = tierName !== 'Plata' || totalPieces >= 10
       if (specialUnlocked) {
+        const clientOverridePrice = getClientProductPriceOverride(product, specialClientSession)
+        if (clientOverridePrice > 0) return clientOverridePrice
         const specialPrice = getSpecialTierPrice(product, tierName, productTierPrices, specialPriceRules)
         if (specialPrice > 0) return specialPrice
         const row = findTierPrice(product.id, tierName)
