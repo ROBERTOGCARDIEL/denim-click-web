@@ -5305,7 +5305,7 @@ function StoreView({
       setHeroVideoReady(false)
       return undefined
     }
-    const id = window.setTimeout(() => setHeroVideoReady(true), isMobile ? 1800 : 250)
+    const id = window.setTimeout(() => setHeroVideoReady(true), isMobile ? 250 : 250)
     return () => window.clearTimeout(id)
   }, [isHomeView, isMobile])
 
@@ -5597,7 +5597,7 @@ function StoreView({
               <div
                 style={{
                   position: 'relative',
-                  minHeight: isMobile ? 'calc(100svh - 76px)' : 680,
+                  minHeight: isMobile ? 'clamp(560px, calc(100svh - 82px), 760px)' : 680,
                   overflow: 'hidden',
                   background: '#111315',
                   color: '#fff',
@@ -5610,7 +5610,7 @@ function StoreView({
                     alt={homeHeroProduct.name}
                     loading="eager"
                     decoding="async"
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: isMobile ? '50% 35%' : 'center' }}
                   />
                 ) : (
                   <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', background: '#1f2937' }}>
@@ -5625,22 +5625,22 @@ function StoreView({
                     muted
                     loop
                     playsInline
-                    preload={isMobile ? 'none' : 'metadata'}
+                    preload="metadata"
                     poster={homeHeroProduct && getCover(homeHeroProduct) ? getCover(homeHeroProduct) : undefined}
                     onError={(event) => {
                       event.currentTarget.style.display = 'none'
                     }}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', objectPosition: isMobile ? '50% 35%' : 'center' }}
                   />
                 ) : null}
 
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,.10) 20%, rgba(0,0,0,.82) 100%)' }} />
+                <div style={{ position: 'absolute', inset: 0, background: isMobile ? 'linear-gradient(180deg, rgba(0,0,0,.06) 0%, rgba(0,0,0,.18) 44%, rgba(0,0,0,.86) 100%)' : 'linear-gradient(180deg, rgba(0,0,0,.10) 20%, rgba(0,0,0,.82) 100%)' }} />
 
-                <div style={{ position: 'absolute', left: isMobile ? 20 : 42, right: isMobile ? 20 : 42, bottom: isMobile ? 28 : 44 }}>
-                  <h1 style={{ margin: '10px 0 0', fontSize: isMobile ? 44 : 78, lineHeight: .94, maxWidth: 880 }}>
+                <div style={{ position: 'absolute', left: isMobile ? 18 : 42, right: isMobile ? 18 : 42, bottom: isMobile ? 22 : 44 }}>
+                  <h1 style={{ margin: '10px 0 0', fontSize: isMobile ? 40 : 78, lineHeight: .96, maxWidth: 880 }}>
                     Apartado por mayoreo
                   </h1>
-                  <p style={{ margin: '14px 0 0', color: 'rgba(255,255,255,.82)', fontSize: isMobile ? 17 : 21, maxWidth: 720, lineHeight: 1.5 }}>
+                  <p style={{ margin: '12px 0 0', color: 'rgba(255,255,255,.86)', fontSize: isMobile ? 16 : 21, maxWidth: 720, lineHeight: 1.45 }}>
                     Arma tu bolsa, revisa disponibilidad por talla y solicita tu apartado directo por WhatsApp.
                   </p>
 
