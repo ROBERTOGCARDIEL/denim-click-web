@@ -596,6 +596,7 @@ function composeProductDescription(product) {
     package_breakdown: product.package_breakdown || '',
     lengths: normalizeMetaList(product.lengths),
     quality: product.customQuality?.trim() || product.quality || '',
+    model_po: product.model_po || '',
     offer_price: Number(product.offer_price || 0),
     offer_duration_days: Number(product.offer_duration_days || 0),
     offer_forever: product.offer_forever === true,
@@ -613,6 +614,7 @@ function composeProductDescription(product) {
     Boolean(meta.package_breakdown) ||
     meta.lengths.length > 0 ||
     Boolean(meta.quality) ||
+    Boolean(meta.model_po) ||
     meta.package_pieces !== 10 ||
     meta.offer_price > 0 ||
     meta.offer_duration_days > 0 ||
@@ -707,6 +709,7 @@ function normalizeProduct(row) {
     audience: row.audience || 'Hombre',
     brand: row.brand || 'Otras',
     quality: productMeta.quality || '',
+    model_po: productMeta.model_po || '',
     images,
     sizes,
     stock,
@@ -866,6 +869,7 @@ function buildEmptyProduct() {
     package_breakdown: '',
     lengths: [],
     quality: '',
+    model_po: '',
     customCategory: '',
     customSubcategory: '',
     customBrand: '',
@@ -2343,6 +2347,7 @@ function ProductCard({
   selectedConfig,
   setSelectedConfig,
   onAddToCart,
+  onAddPackageToCart,
   onOpenGallery,
   onOpenQuickView,
   specialClientSession,
@@ -2350,9 +2355,23 @@ function ProductCard({
   fetchProductImages,
 }) {
   const current = selectedConfig[product.id] || { size: '', quantity: 0 }
+  const [pickerMode, setPickerMode] = useState('sizes')
+  const [packageQty, setPackageQty] = useState(1)
   const activeSize = current.size
   const stockForSelected = Number(product.stock?.[activeSize] || 0)
   const availableStock = totalStock(product.stock)
+  const packageStock = Number(product.package_stock || 0)
+  const packageUnitPrice = getPackageUnitPrice(product)
+
+  const setPackageQuantity = (qty) => {
+    const clean = Math.max(1, Math.min(Number(qty || 1), Math.max(1, packageStock)))
+    setPackageQty(clean)
+  }
+
+  const addPackage = () => {
+    if (!onAddPackageToCart) return false
+    return onAddPackageToCart(product, packageQty)
+  }
 
   const setSize = (size) => {
     const available = Number(product.stock?.[size] || 0)
@@ -2410,8 +2429,9 @@ function ProductCard({
       <div style={{ padding: isMobile ? '11px 0 18px' : 18 }}>
         {!isMobile ? (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-            <Badge>{product.audience}</Badge>
             <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
+            {product.subcategory ? <Badge bg="#f6f4ef" border="1px solid #e5dfd4">{product.subcategory}</Badge> : null}
+            {product.quality ? <Badge bg="#f5f3ff" color="#6d28d9">{product.quality}</Badge> : null}
             {product.is_new ? <Badge bg="#111315" color="#fff">Nuevo</Badge> : null}
             {product.sales_count > 0 ? <Badge bg="#b7791f" color="#fff">Mas vendido</Badge> : null}
             <Badge
@@ -2420,6 +2440,14 @@ function ProductCard({
             >
               {availableStock > 0 ? availableStock + ' disponibles' : 'Agotado'}
             </Badge>
+          </div>
+        ) : null}
+
+        {isMobile ? (
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 7 }}>
+            <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
+            {product.subcategory ? <Badge bg="#f6f4ef" border="1px solid #e5dfd4">{product.subcategory}</Badge> : null}
+            {product.quality ? <Badge bg="#f5f3ff" color="#6d28d9">{product.quality}</Badge> : null}
           </div>
         ) : null}
 
@@ -2440,11 +2468,59 @@ function ProductCard({
           </h4>
         </button>
 
+        {product.model_po ? (
+          <p style={{ margin: '5px 0 0', color: '#6b7280', fontSize: isMobile ? 11 : 12, fontWeight: 800 }}>
+            Modelo/PO: {product.model_po}
+          </p>
+        ) : null}
+
+        <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {[['sizes', 'Tallas'], ['package', 'Paquete']].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setPickerMode(key)}
+              style={{
+                border: pickerMode === key ? '2px solid #111315' : '1px solid #d1d5db',
+                background: pickerMode === key ? '#111315' : '#fff',
+                color: pickerMode === key ? '#fff' : '#111315',
+                borderRadius: 999,
+                padding: isMobile ? '6px 10px' : '7px 12px',
+                fontSize: isMobile ? 11 : 12,
+                fontWeight: 900,
+                cursor: 'pointer',
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {isMobile ? (
           <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-            <p style={{ margin: 0, color: '#6b7280', fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>
-              Tallas disponibles
-            </p>
+            {pickerMode === 'package' ? (
+              <div style={{ border: '1px solid #e5dfd4', borderRadius: 12, padding: 10, background: '#fbfaf7', display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 900 }}>Entallado</span>
+                  <strong style={{ fontSize: 12 }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</strong>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 900 }}>Precio</span>
+                  <strong style={{ fontSize: 12 }}>{mxn(packageUnitPrice)}</strong>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
+                    <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}><Minus size={14} /></button>
+                    <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ width: 42, height: 32, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900 }} />
+                    <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}><Plus size={14} /></button>
+                  </div>
+                  <button type="button" onClick={addPackage} disabled={packageStock <= 0} style={{ ...styles.buttonPrimary, minHeight: 36, borderRadius: 999, padding: '8px 12px', fontSize: 12, opacity: packageStock <= 0 ? 0.5 : 1 }}>
+                    Agregar paquete
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               {(product.sizes || []).slice(0, 8).map((size) => {
                 const qty = Number(product.stock?.[size] || 0)
@@ -2509,6 +2585,8 @@ function ProductCard({
                 </button>
               </div>
             ) : null}
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -2537,8 +2615,23 @@ function ProductCard({
               )}
             </div>
 
+            {pickerMode === 'package' ? (
+              <div style={{ marginTop: 10, border: '1px solid #e5dfd4', borderRadius: 12, padding: 12, background: '#fbfaf7', display: 'grid', gap: 10 }}>
+                <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                  <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Entallado</small><div style={{ fontWeight: 900 }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</div></div>
+                  <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Precio</small><div style={{ fontWeight: 900 }}>{mxn(packageUnitPrice)}</div></div>
+                  <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Paquetes</small><div style={{ fontWeight: 900 }}>{packageStock}</div></div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}><Minus size={14} /></button>
+                  <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ ...styles.input, width: 86, textAlign: 'center', padding: '12px 14px' }} />
+                  <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}><Plus size={14} /></button>
+                  <button type="button" onClick={addPackage} disabled={packageStock <= 0} style={{ ...styles.buttonPrimary, flex: 1, opacity: packageStock <= 0 ? 0.5 : 1 }}>Agregar paquete</button>
+                </div>
+              </div>
+            ) : (
+              <>
             <div style={{ marginTop: 10 }}>
-              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#6b7280', fontWeight: 700 }}>Tallas</p>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 {(product.sizes || []).map((size) => {
                   const qty = Number(product.stock?.[size] || 0)
@@ -2589,16 +2682,19 @@ function ProductCard({
               </div>
             ) : null}
 
+            </>
+            )}
+
             <button
               type="button"
               onClick={() => onAddToCart(product)}
-              disabled={!activeSize || Number(current.quantity || 0) <= 0}
+              disabled={pickerMode !== 'sizes' || !activeSize || Number(current.quantity || 0) <= 0}
               style={{
                 ...styles.buttonPrimary,
                 width: '100%',
                 marginTop: 12,
-                opacity: !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
-                cursor: !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer',
+                opacity: pickerMode !== 'sizes' || !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
+                cursor: pickerMode !== 'sizes' || !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer',
                 fontSize: 15,
               }}
             >
@@ -2648,6 +2744,11 @@ function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuick
             {product.name}
           </h3>
         </button>
+        {product.model_po ? (
+          <p style={{ margin: '5px 0 0', color: '#6b7280', fontSize: isMobile ? 11 : 12, fontWeight: 800 }}>
+            Modelo/PO: {product.model_po}
+          </p>
+        ) : null}
       </div>
     </article>
   )
@@ -2682,6 +2783,7 @@ function ProductQuickView({
   const packagePieces = product ? getPackagePieces(product) : 10
   const packageStock = product ? Number(product.package_stock || 0) : 0
   const packageUnitPrice = product ? getPackageUnitPrice(product) : 0
+  const [detailMode, setDetailMode] = useState('sizes')
 
   useEffect(() => {
     if (!open || !product) return
@@ -2896,6 +2998,11 @@ function ProductQuickView({
             <h2 style={{ margin: '8px 0 0', fontSize: isMobile ? 30 : 38, lineHeight: 1.02 }}>
               {product.name}
             </h2>
+            {product.model_po ? (
+              <p style={{ margin: '7px 0 0', color: '#6b7280', fontSize: 12, fontWeight: 900 }}>
+                Modelo/PO: {product.model_po}
+              </p>
+            ) : null}
             <p style={{ margin: '8px 0 0', color: '#6b7280', fontWeight: 700 }}>
               Modelo/Fit: {product.subcategory || product.category}
             </p>
@@ -2914,6 +3021,28 @@ function ProductQuickView({
             </p>
           </div>
 
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {[['sizes', 'Tallas'], ['package', 'Paquete']].map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setDetailMode(key)}
+                style={{
+                  border: detailMode === key ? '2px solid #111315' : '1px solid #d1d5db',
+                  background: detailMode === key ? '#111315' : '#fff',
+                  color: detailMode === key ? '#fff' : '#111315',
+                  borderRadius: 999,
+                  padding: '9px 14px',
+                  fontWeight: 900,
+                  cursor: 'pointer',
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {detailMode === 'sizes' ? (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
               <p style={{ margin: 0, fontWeight: 900 }}>Seleccionar talla</p>
@@ -2948,7 +3077,9 @@ function ProductQuickView({
               })}
             </div>
           </div>
+          ) : null}
 
+          {detailMode === 'package' ? (
           <div style={{ border: '1px solid #e5dfd4', borderRadius: 8, padding: 14, background: '#fbfaf7' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <ShoppingBag size={18} />
@@ -2959,8 +3090,8 @@ function ProductQuickView({
             </p>
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', marginTop: 12 }}>
               <div style={{ background: '#fff', border: '1px solid #e5dfd4', borderRadius: 8, padding: 10 }}>
-                <small style={{ color: '#6b7280', fontWeight: 800 }}>Precio paquete</small>
-                <div style={{ fontWeight: 950 }}>{mxn(packageUnitPrice)} c/u</div>
+                <small style={{ color: '#6b7280', fontWeight: 800 }}>Precio</small>
+                <div style={{ fontWeight: 950 }}>{mxn(packageUnitPrice)}</div>
               </div>
               <div style={{ background: '#fff', border: '1px solid #e5dfd4', borderRadius: 8, padding: 10 }}>
                 <small style={{ color: '#6b7280', fontWeight: 800 }}>Disponibles</small>
@@ -2995,7 +3126,9 @@ function ProductQuickView({
               <p style={{ margin: '10px 0 0', color: '#991b1b', fontWeight: 900 }}>Paquete cerrado agotado.</p>
             )}
           </div>
+          ) : null}
 
+          {detailMode === 'sizes' ? (
           <div>
             <p style={{ margin: '0 0 10px', fontWeight: 900 }}>Cantidad</p>
             <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
@@ -3008,12 +3141,20 @@ function ProductQuickView({
               </button>
             </div>
           </div>
+          ) : null}
 
           <button
             type="button"
             onClick={addAndClose}
-            disabled={!activeSize || Number(current.quantity || 0) <= 0}
-            style={{ ...styles.buttonPrimary, width: '100%', minHeight: 56, borderRadius: 0, opacity: !activeSize || Number(current.quantity || 0) <= 0 ? .52 : 1, cursor: !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer' }}
+            disabled={detailMode !== 'sizes' || !activeSize || Number(current.quantity || 0) <= 0}
+            style={{
+              ...styles.buttonPrimary,
+              width: '100%',
+              minHeight: 56,
+              borderRadius: 0,
+              opacity: detailMode !== 'sizes' || !activeSize || Number(current.quantity || 0) <= 0 ? .52 : 1,
+              cursor: detailMode !== 'sizes' || !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer',
+            }}
           >
             <ShoppingBag size={18} />
             Agregar a bolsa
@@ -3297,7 +3438,12 @@ function CartDrawer({
                           </button>
                         </div>
 
-                        <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: 13 }}>{item.packageMode ? 'Precio por pieza del paquete' : 'Unitario'}: {mxn(unit)}</p>
+                        <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: 13 }}>{item.packageMode ? 'Precio pieza paquete' : 'Unitario'}: {mxn(unit)}</p>
+                        {item.packageMode ? (
+                          <p style={{ margin: '4px 0 0', color: '#111827', fontSize: 13, fontWeight: 900 }}>
+                            Paquete completo: {mxn(unit * getPackagePieces(item.product))}
+                          </p>
+                        ) : null}
                       </div>
                     </article>
                   )
@@ -3532,6 +3678,13 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
           ))}
         </select>
       </div>
+
+      <input
+        style={styles.input}
+        placeholder="Modelo/PO"
+        value={draft.model_po || ''}
+        onChange={(e) => setDraft((p) => ({ ...p, model_po: e.target.value }))}
+      />
 
       <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
         <select style={styles.input} value={draft.category} onChange={(e) => applyCategory(e.target.value)}>
@@ -5891,6 +6044,7 @@ function StoreView({
                   selectedConfig={selectedConfig}
                   setSelectedConfig={setSelectedConfig}
                   onAddToCart={addToCart}
+                  onAddPackageToCart={addPackageToCart}
                   onOpenGallery={openGalleryProduct}
                   onOpenQuickView={openQuickViewProduct}
                   specialClientSession={specialClientSession}
