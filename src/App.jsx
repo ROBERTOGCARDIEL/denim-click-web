@@ -37,7 +37,7 @@ const ADMIN_SESSION_KEY = 'apartados_admin_session_v2'
 const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v2'
 const CART_STORAGE_KEY = 'denimclick_cart_v2'
 const PRODUCTS_CACHE_KEY = 'denimclick_products_cache_v3'
-const SPECIAL_PRICE_RULES_STORAGE_KEY = 'denimclick_special_price_rules_v1'
+const SPECIAL_PRICE_RULES_STORAGE_KEY = 'denimclick_special_price_rules_v2'
 const PRODUCT_PAGE_SIZE_DESKTOP = 24
 const PRODUCT_PAGE_SIZE_MOBILE = 12
 const NEW_PRODUCT_DAYS = 7
@@ -105,18 +105,82 @@ const SPECIAL_PRICE_RULE_PRESETS = [
     },
   },
   {
-    id: 'playeras-corta',
-    label: 'Playeras dama/caballero sin manga larga',
+    id: 'boss-jeans',
+    label: 'Boss jeans dama/caballero',
+    brand: 'Boss',
+    audience: 'Hombre,Dama',
+    category: 'Jeans',
+    exclude_text: '',
+    prices: {
+      Plata: 355,
+      Oro: 355,
+      Esmeralda: 350,
+      Platino: 350,
+      Diamante: 350,
+      Imperial: 0,
+    },
+  },
+  {
+    id: 'ck-mk-jeans',
+    label: 'CK y MK jeans dama/caballero',
+    brand: 'CK,MK',
+    audience: 'Hombre,Dama',
+    category: 'Jeans',
+    exclude_text: '',
+    prices: {
+      Plata: 305,
+      Oro: 299,
+      Esmeralda: 299,
+      Platino: 299,
+      Diamante: 299,
+      Imperial: 0,
+    },
+  },
+  {
+    id: 'american-eagle-jeans',
+    label: 'American Eagle jeans dama/caballero',
+    brand: 'American Eagle',
+    audience: 'Hombre,Dama',
+    category: 'Jeans',
+    exclude_text: '',
+    prices: {
+      Plata: 355,
+      Oro: 355,
+      Esmeralda: 350,
+      Platino: 350,
+      Diamante: 350,
+      Imperial: 0,
+    },
+  },
+  {
+    id: 'playeras-todas',
+    label: 'Playeras todas las marcas dama/caballero',
     brand: 'Todas',
     audience: 'Hombre,Dama',
     category: 'Playeras',
-    exclude_text: 'manga larga',
+    exclude_text: '',
     prices: {
       Plata: 175,
       Oro: 175,
       Esmeralda: 175,
       Platino: 159,
       Diamante: 159,
+      Imperial: 0,
+    },
+  },
+  {
+    id: 'sudaderas-todas',
+    label: 'Sudaderas todas las marcas dama/caballero',
+    brand: 'Todas',
+    audience: 'Hombre,Dama',
+    category: 'Sudaderas',
+    exclude_text: '',
+    prices: {
+      Plata: 355,
+      Oro: 355,
+      Esmeralda: 355,
+      Platino: 355,
+      Diamante: 355,
       Imperial: 0,
     },
   },
@@ -131,6 +195,8 @@ const BASE_CATEGORY_MAP = {
 }
 
 const JEANS_FITS = ['Straight', 'Slim', 'Skinny', 'Regular', 'Relaxed', 'Baggy']
+
+const QUALITY_OPTIONS = ['Primera', 'Premium', 'Segunda', 'Outlet']
 
 const BRANDS = [
   'Levi’s',
@@ -319,12 +385,18 @@ function productMatchesSpecialRule(product, rule) {
     audiences.includes('Todo') ||
     audiences.some((audience) => normalizeRuleText(audience) === normalizeRuleText(product.audience))
   const categoryOk = !rule.category || normalizeRuleText(rule.category) === normalizeRuleText(product.category)
+  const brands = normalizeMetaList(rule.brand || 'Todas')
   const brandOk =
-    !rule.brand ||
-    normalizeRuleText(rule.brand) === 'todas' ||
-    normalizeRuleText(rule.brand) === 'todos' ||
-    normalizeRuleText(product.brand).includes(normalizeRuleText(rule.brand))
-  const combinedText = normalizeRuleText(product.name + ' ' + product.category + ' ' + product.subcategory + ' ' + product.brand)
+    brands.length === 0 ||
+    brands.some((brand) => {
+      const normalizedBrand = normalizeRuleText(brand)
+      return (
+        normalizedBrand === 'todas' ||
+        normalizedBrand === 'todos' ||
+        normalizeRuleText(product.brand).includes(normalizedBrand)
+      )
+    })
+  const combinedText = normalizeRuleText(product.name + ' ' + product.category + ' ' + product.subcategory + ' ' + product.brand + ' ' + (product.quality || ''))
   const excludeOk = !rule.exclude_text || !combinedText.includes(normalizeRuleText(rule.exclude_text))
   return audienceOk && categoryOk && brandOk && excludeOk
 }
@@ -523,6 +595,7 @@ function composeProductDescription(product) {
     package_fit: product.package_fit || '',
     package_breakdown: product.package_breakdown || '',
     lengths: normalizeMetaList(product.lengths),
+    quality: product.customQuality?.trim() || product.quality || '',
     offer_price: Number(product.offer_price || 0),
     offer_duration_days: Number(product.offer_duration_days || 0),
     offer_forever: product.offer_forever === true,
@@ -539,6 +612,7 @@ function composeProductDescription(product) {
     Boolean(meta.package_fit) ||
     Boolean(meta.package_breakdown) ||
     meta.lengths.length > 0 ||
+    Boolean(meta.quality) ||
     meta.package_pieces !== 10 ||
     meta.offer_price > 0 ||
     meta.offer_duration_days > 0 ||
@@ -632,6 +706,7 @@ function normalizeProduct(row) {
     subcategory: row.subcategory || '',
     audience: row.audience || 'Hombre',
     brand: row.brand || 'Otras',
+    quality: productMeta.quality || '',
     images,
     sizes,
     stock,
@@ -790,9 +865,11 @@ function buildEmptyProduct() {
     package_fit: '',
     package_breakdown: '',
     lengths: [],
+    quality: '',
     customCategory: '',
     customSubcategory: '',
     customBrand: '',
+    customQuality: '',
   }
 }
 
@@ -3359,10 +3436,12 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
   )
 
   const customBrands = uniqueValues(products.map((p) => p.brand).filter((b) => b && !BRANDS.includes(b)))
+  const customQualities = uniqueValues(products.map((p) => p.quality).filter((q) => q && !QUALITY_OPTIONS.includes(q)))
 
   const categories = getAudienceCategories(draft.audience, customCategories).filter((c) => c !== 'Playera')
   const fits = getFitsForAudience(products, draft.audience, customFits, { onlyWithStock: false })
   const brands = uniqueValues([...BRANDS, ...customBrands])
+  const qualities = uniqueValues([...QUALITY_OPTIONS, ...customQualities])
   const hasPreset = !isKidsAudience(draft.audience) && Boolean(ADMIN_PRICE_PRESETS[draft.category])
 
   const applyAudience = (audience) => {
@@ -3509,6 +3588,26 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
           placeholder="O crea una marca personalizada"
           value={draft.customBrand || ''}
           onChange={(e) => setDraft((p) => ({ ...p, customBrand: e.target.value }))}
+        />
+      </div>
+
+      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr' }}>
+        <select
+          style={styles.input}
+          value={draft.quality || ''}
+          onChange={(e) => setDraft((p) => ({ ...p, quality: e.target.value }))}
+        >
+          <option value="">Calidad sin definir</option>
+          {qualities.map((quality) => (
+            <option key={quality} value={quality}>{quality}</option>
+          ))}
+        </select>
+
+        <input
+          style={styles.input}
+          placeholder="O crea una calidad personalizada"
+          value={draft.customQuality || ''}
+          onChange={(e) => setDraft((p) => ({ ...p, customQuality: e.target.value }))}
         />
       </div>
 
@@ -6078,7 +6177,8 @@ function AdminView({
     const finalCategory = draft.customCategory?.trim() || draft.category
     const finalSubcategory = draft.customSubcategory?.trim() || draft.subcategory || ''
     const finalBrand = draft.customBrand?.trim() || draft.brand
-    return { ...draft, category: finalCategory, subcategory: finalSubcategory, brand: finalBrand }
+    const finalQuality = draft.customQuality?.trim() || draft.quality || ''
+    return { ...draft, category: finalCategory, subcategory: finalSubcategory, brand: finalBrand, quality: finalQuality }
   }
 
   const addProduct = async () => {
@@ -6117,7 +6217,7 @@ function AdminView({
 
   const startEdit = async (product) => {
     setEditingId(product.id)
-    setEditingDraft({ ...product, customCategory: '', customSubcategory: '', customBrand: '' })
+    setEditingDraft({ ...product, customCategory: '', customSubcategory: '', customBrand: '', customQuality: '' })
     const images = await fetchProductImages(product.id)
     if (images.length) {
       setEditingDraft((prev) => (prev && String(prev.id) === String(product.id) ? { ...prev, images } : prev))
@@ -6232,6 +6332,7 @@ function AdminView({
                 <Badge>{product.audience}</Badge>
                 <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
                 {product.subcategory ? <Badge bg="#dbeafe" color="#1d4ed8">{product.subcategory}</Badge> : null}
+                {product.quality ? <Badge bg="#f5f3ff" color="#6d28d9">{product.quality}</Badge> : null}
                 {product.is_offer ? <Badge bg="#fef3c7" color="#92400e">Oferta</Badge> : null}
               </div>
               <p style={{ margin: '8px 0 0', color: '#6b7280' }}>{product.category} | Stock {product.stock_total} | Paquetes {product.package_stock || 0}</p>
