@@ -2505,7 +2505,7 @@ function ProductCard({
                   <strong style={{ fontSize: 12 }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</strong>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 900 }}>Precio</span>
+                  <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 900 }}>Precio c/u</span>
                   <strong style={{ fontSize: 12 }}>{mxn(packageUnitPrice)}</strong>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -2619,7 +2619,7 @@ function ProductCard({
               <div style={{ marginTop: 10, border: '1px solid #e5dfd4', borderRadius: 12, padding: 12, background: '#fbfaf7', display: 'grid', gap: 10 }}>
                 <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(3, 1fr)' }}>
                   <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Entallado</small><div style={{ fontWeight: 900 }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</div></div>
-                  <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Precio</small><div style={{ fontWeight: 900 }}>{mxn(packageUnitPrice)}</div></div>
+                  <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Precio c/u</small><div style={{ fontWeight: 900 }}>{mxn(packageUnitPrice)}</div></div>
                   <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Paquetes</small><div style={{ fontWeight: 900 }}>{packageStock}</div></div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
@@ -3090,7 +3090,7 @@ function ProductQuickView({
             </p>
             <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', marginTop: 12 }}>
               <div style={{ background: '#fff', border: '1px solid #e5dfd4', borderRadius: 8, padding: 10 }}>
-                <small style={{ color: '#6b7280', fontWeight: 800 }}>Precio</small>
+                <small style={{ color: '#6b7280', fontWeight: 800 }}>Precio c/u</small>
                 <div style={{ fontWeight: 950 }}>{mxn(packageUnitPrice)}</div>
               </div>
               <div style={{ background: '#fff', border: '1px solid #e5dfd4', borderRadius: 8, padding: 10 }}>
@@ -3438,7 +3438,7 @@ function CartDrawer({
                           </button>
                         </div>
 
-                        <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: 13 }}>{item.packageMode ? 'Precio pieza paquete' : 'Unitario'}: {mxn(unit)}</p>
+                        <p style={{ margin: '8px 0 0', color: '#6b7280', fontSize: 13 }}>{item.packageMode ? 'Precio c/u' : 'Unitario'}: {mxn(unit)}</p>
                         {item.packageMode ? (
                           <p style={{ margin: '4px 0 0', color: '#111827', fontSize: 13, fontWeight: 900 }}>
                             Paquete completo: {mxn(unit * getPackagePieces(item.product))}
@@ -5429,6 +5429,17 @@ function StoreView({
 
   const visibleBrands = getStoreBrands(products, storeAudience)
   const visibleCategories = getStoreCategories(products, storeAudience)
+  const visibleFits = useMemo(() => {
+    return uniqueValues(
+      products
+        .filter((product) => product.active && productHasVisibleStock(product))
+        .filter((product) => storeAudience === 'Todo' || product.audience === storeAudience)
+        .filter((product) => storeCategory === 'Todos' || product.category === storeCategory)
+        .filter((product) => storeBrand === 'Todas' || product.brand === storeBrand)
+        .map((product) => product.subcategory)
+        .filter(Boolean)
+    )
+  }, [products, storeAudience, storeCategory, storeBrand])
   const activeProducts = useMemo(() => products.filter((p) => p.active), [products])
   const featuredProducts = useMemo(() => activeProducts.filter((p) => getCover(p)), [activeProducts])
   const heroProduct = useMemo(() => {
@@ -5533,6 +5544,12 @@ function StoreView({
   useEffect(() => {
     setPage(1)
   }, [storeAudience, storeCategory, storeBrand, storeFit, search])
+
+  useEffect(() => {
+    if (storeFit !== 'Todos' && storeFit !== LAST_UNITS_FILTER && !visibleFits.includes(storeFit)) {
+      setStoreFit('Todos')
+    }
+  }, [storeFit, visibleFits, setStoreFit])
 
   const pageSize = isMobile ? PRODUCT_PAGE_SIZE_MOBILE : PRODUCT_PAGE_SIZE_DESKTOP
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize))
@@ -5979,11 +5996,11 @@ function StoreView({
             style={{
               display: 'grid',
               gap: 14,
-              gridTemplateColumns: isMobile ? '1fr' : '1.25fr .9fr .9fr',
+              gridTemplateColumns: isMobile ? '1fr 1fr' : '1.25fr .8fr .8fr .8fr',
               alignItems: 'center',
             }}
           >
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative', gridColumn: isMobile ? '1 / -1' : 'auto' }}>
               <Search size={16} color="#9ca3af" style={{ position: 'absolute', left: 12, top: 14 }} />
               <input
                 style={{ ...styles.input, paddingLeft: 36 }}
@@ -6010,11 +6027,25 @@ function StoreView({
             <select
               style={styles.input}
               value={storeBrand}
-              onChange={(e) => setStoreBrand(e.target.value)}
+              onChange={(e) => {
+                setStoreBrand(e.target.value)
+                setStoreFit('Todos')
+              }}
             >
               <option value="Todas">Todas las marcas</option>
               {visibleBrands.map((brand) => (
                 <option key={brand} value={brand}>{brand}</option>
+              ))}
+            </select>
+
+            <select
+              style={{ ...styles.input, gridColumn: isMobile && visibleFits.length <= 1 ? '1 / -1' : 'auto' }}
+              value={storeFit}
+              onChange={(e) => setStoreFit(e.target.value)}
+            >
+              <option value="Todos">Todos los fits</option>
+              {visibleFits.map((fit) => (
+                <option key={fit} value={fit}>{fit}</option>
               ))}
             </select>
           </div>
