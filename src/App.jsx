@@ -396,9 +396,20 @@ function productMatchesSpecialRule(product, rule) {
         normalizeRuleText(product.brand).includes(normalizedBrand)
       )
     })
+  const qualities = normalizeMetaList(rule.quality || 'Todas')
+  const qualityOk =
+    qualities.length === 0 ||
+    qualities.some((quality) => {
+      const normalizedQuality = normalizeRuleText(quality)
+      return (
+        normalizedQuality === 'todas' ||
+        normalizedQuality === 'todos' ||
+        normalizeRuleText(product.quality).includes(normalizedQuality)
+      )
+    })
   const combinedText = normalizeRuleText(product.name + ' ' + product.category + ' ' + product.subcategory + ' ' + product.brand + ' ' + (product.quality || ''))
   const excludeOk = !rule.exclude_text || !combinedText.includes(normalizeRuleText(rule.exclude_text))
-  return audienceOk && categoryOk && brandOk && excludeOk
+  return audienceOk && categoryOk && brandOk && qualityOk && excludeOk
 }
 
 function clientMatchesPriceOverride(client, override) {
@@ -3187,6 +3198,7 @@ function CartDrawer({
   specialClientSession,
   getCartUnitPrice,
 }) {
+  const [policyOpen, setPolicyOpen] = useState(false)
   const totalPieces = useMemo(() => getCartTotalPieces(cart), [cart])
 
   const subtotal = useMemo(() => getCartSubtotal(cart, getCartUnitPrice), [cart, getCartUnitPrice])
@@ -3555,7 +3567,7 @@ function CartDrawer({
               opacity: cart.length === 0 || orderLoading ? .55 : 1,
               cursor: cart.length === 0 || orderLoading ? 'not-allowed' : 'pointer',
             }}
-            onClick={sendOrder}
+            onClick={() => setPolicyOpen(true)}
             disabled={cart.length === 0 || orderLoading}
           >
             <ShoppingBag size={18} />
@@ -3563,6 +3575,83 @@ function CartDrawer({
           </button>
         </div>
       </aside>
+
+      {policyOpen ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Condiciones del apartado"
+          onClick={(event) => event.stopPropagation()}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 95,
+            background: 'rgba(17,19,21,.45)',
+            display: 'grid',
+            placeItems: 'center',
+            padding: 18,
+          }}
+        >
+          <div
+            style={{
+              width: 'min(520px, 100%)',
+              background: '#fff',
+              borderRadius: 26,
+              padding: isMobile ? 22 : 28,
+              boxShadow: '0 24px 70px rgba(17,19,21,.28)',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'start' }}>
+              <div>
+                <p style={{ margin: 0, color: '#9a6b16', fontSize: 12, fontWeight: 900, textTransform: 'uppercase' }}>Condiciones</p>
+                <h3 style={{ margin: '6px 0 0', fontSize: isMobile ? 28 : 34, lineHeight: 1 }}>Apartado Denim Click</h3>
+              </div>
+              <button
+                type="button"
+                aria-label="Cerrar aviso"
+                onClick={() => setPolicyOpen(false)}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 999,
+                  border: '1px solid #e5dfd4',
+                  background: '#fff',
+                  display: 'grid',
+                  placeItems: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <X size={22} />
+              </button>
+            </div>
+
+            <p style={{ margin: '18px 0 0', color: '#374151', fontSize: 18, lineHeight: 1.55 }}>
+              Los apartados se mantienen por 7 dias. Posterior a ese tiempo se necesitara un deposito para conservar el apartado activo.
+            </p>
+            <p style={{ margin: '10px 0 0', color: '#6b7280', lineHeight: 1.5 }}>
+              Al continuar se guardara tu solicitud, se descontara la disponibilidad y se abrira WhatsApp con el mensaje listo para enviar.
+            </p>
+
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 24 }}>
+              <button type="button" style={styles.buttonSecondary} onClick={() => setPolicyOpen(false)}>
+                Revisar bolsa
+              </button>
+              <button
+                type="button"
+                style={styles.buttonPrimary}
+                disabled={orderLoading}
+                onClick={() => {
+                  setPolicyOpen(false)
+                  sendOrder()
+                }}
+              >
+                <ShoppingBag size={18} />
+                Entiendo, solicitar apartado
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -4130,6 +4219,7 @@ function SpecialPricingAdmin({ products, productTierPrices, fetchTierPrices, spe
         id: 'regla-' + Date.now(),
         label: 'Nueva regla',
         brand: 'Todas',
+        quality: 'Todas',
         audience: 'Hombre,Dama',
         category: 'Jeans',
         exclude_text: '',
@@ -4194,7 +4284,7 @@ function SpecialPricingAdmin({ products, productTierPrices, fetchTierPrices, spe
             const matches = products.filter((product) => productMatchesSpecialRule(product, rule)).length
             return (
               <div key={rule.id || index} style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 16, background: '#fbfaf7' }}>
-                <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1.2fr .7fr .8fr .8fr .8fr', alignItems: 'end' }}>
+                <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : '1.2fr .7fr .7fr .8fr .8fr .8fr', alignItems: 'end' }}>
                   <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
                     Nombre de regla
                     <input style={styles.input} value={rule.label || ''} onChange={(event) => updateRule(index, 'label', event.target.value)} />
@@ -4202,6 +4292,10 @@ function SpecialPricingAdmin({ products, productTierPrices, fetchTierPrices, spe
                   <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
                     Marca
                     <input style={styles.input} value={rule.brand || ''} onChange={(event) => updateRule(index, 'brand', event.target.value)} placeholder="Todas o Levi" />
+                  </label>
+                  <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
+                    Calidad
+                    <input style={styles.input} value={rule.quality || 'Todas'} onChange={(event) => updateRule(index, 'quality', event.target.value)} placeholder="Todas o Premium" />
                   </label>
                   <label style={{ display: 'grid', gap: 6, fontWeight: 800 }}>
                     Genero
@@ -7229,83 +7323,124 @@ export default function App() {
       'Observacion del cliente: ' + (customer.notes || '-') + '\n\n' +
       'Solicito apartado y confirmacion de existencia.'
 
-    const productUpdates = new Map()
-    for (const item of cart) {
-      const product = products.find((p) => p.id === item.product.id)
-      if (!product) continue
-      const entry = productUpdates.get(product.id) || {
-        product,
-        stock: { ...product.stock },
-        package_stock: Number(product.package_stock || 0),
-        sales_count: Number(product.sales_count || 0),
-      }
-      if (item.packageMode) {
-        entry.package_stock = Math.max(0, entry.package_stock - Number(item.quantity || 0))
-      } else {
-        entry.stock[item.size] = Math.max(0, Number(entry.stock?.[item.size] || 0) - Number(item.quantity || 0))
-      }
-      entry.sales_count += getCartItemPieces(item)
-      productUpdates.set(product.id, entry)
-    }
-
     const link = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(msg)
 
     setLoading(true)
-    setCart([])
-    setCustomer(emptyCustomer)
-    setProducts((prevProducts) =>
-      prevProducts.map((product) => {
-        const entry = productUpdates.get(product.id)
-        if (!entry) return product
-        return {
-          ...product,
-          stock: entry.stock,
-          stock_total: totalStock(entry.stock),
-          package_stock: entry.package_stock,
-          sales_count: entry.sales_count,
-        }
-      })
-    )
-
-    let opened = null
     try {
-      opened = window.open(link, '_blank', 'noopener,noreferrer')
-    } catch {
-      opened = null
+      const productIds = uniqueValues(cart.map((item) => item.product?.id).filter(Boolean).map(String))
+      if (!productIds.length) throw new Error('No se encontraron productos validos en la bolsa.')
+
+      const { data: latestRows, error: latestError } = await supabase
+        .from('products')
+        .select(PRODUCT_LIST_COLUMNS)
+        .in('id', productIds)
+
+      if (latestError) throw latestError
+
+      const latestProducts = new Map(
+        (latestRows || []).map((row) => {
+          const product = normalizeProduct(row)
+          return [String(product.id), product]
+        })
+      )
+
+      const productUpdates = new Map()
+      for (const item of cart) {
+        const product = latestProducts.get(String(item.product.id))
+        if (!product) throw new Error('El producto "' + item.product.name + '" ya no esta disponible.')
+
+        const entry = productUpdates.get(String(product.id)) || {
+          product,
+          stock: { ...product.stock },
+          package_stock: Number(product.package_stock || 0),
+          sales_count: Number(product.sales_count || 0),
+        }
+
+        const quantity = Number(item.quantity || 0)
+        if (quantity <= 0) continue
+
+        if (item.packageMode) {
+          if (entry.package_stock < quantity) {
+            throw new Error('No hay paquetes suficientes de "' + product.name + '". Disponibles: ' + entry.package_stock + '.')
+          }
+          entry.package_stock -= quantity
+          entry.sales_count += getPackagePieces(product) * quantity
+        } else {
+          const currentStock = Number(entry.stock?.[item.size] || 0)
+          if (currentStock < quantity) {
+            throw new Error('No hay stock suficiente de "' + product.name + '" talla ' + item.size + '. Disponibles: ' + currentStock + '.')
+          }
+          entry.stock[item.size] = currentStock - quantity
+          entry.sales_count += quantity
+        }
+
+        productUpdates.set(String(product.id), entry)
+      }
+
+      const orderResult = await supabase.from('orders').insert([orderPayload])
+      if (orderResult.error) throw orderResult.error
+
+      const stockResults = await Promise.all(
+        [...productUpdates.values()].map((entry) => {
+          const nextProduct = {
+            ...entry.product,
+            stock: entry.stock,
+            package_stock: entry.package_stock,
+            sales_count: entry.sales_count,
+          }
+          const payload = {
+            stock_json: entry.stock,
+            stock: totalStock(entry.stock),
+            sales_count: entry.sales_count,
+            description: composeProductDescription(nextProduct),
+          }
+          return supabase.from('products').update(payload).eq('id', entry.product.id)
+        })
+      )
+
+      const stockError = stockResults.find((result) => result.error)?.error
+      if (stockError) throw stockError
+
+      const updatedProducts = new Map(
+        [...productUpdates.entries()].map(([id, entry]) => [
+          id,
+          {
+            ...entry.product,
+            stock: entry.stock,
+            stock_total: totalStock(entry.stock),
+            package_stock: entry.package_stock,
+            sales_count: entry.sales_count,
+          },
+        ])
+      )
+
+      setProducts((prevProducts) =>
+        prevProducts.map((product) => updatedProducts.get(String(product.id)) || product)
+      )
+      setCart([])
+      setCustomer(emptyCustomer)
+
+      let opened = null
+      try {
+        opened = window.open(link, '_blank', 'noopener,noreferrer')
+      } catch {
+        opened = null
+      }
+
+      if (!opened) {
+        window.location.assign(link)
+      }
+
+      fetchProducts().catch((error) => console.error('No se pudieron refrescar productos despues del pedido:', error))
+      if (route === 'admin' && isAdminAuthenticated) {
+        fetchOrders().catch((error) => console.error('No se pudieron refrescar pedidos despues del pedido:', error))
+      }
+    } catch (error) {
+      console.error('No se pudo solicitar el apartado:', error)
+      alert('No se pudo solicitar el apartado: ' + (error.message || 'Revisa el stock e intenta de nuevo.'))
+    } finally {
+      setLoading(false)
     }
-
-    if (!opened) {
-      window.location.assign(link)
-    }
-
-    setLoading(false)
-
-    Promise.resolve()
-      .then(async () => {
-        const orderResult = await supabase.from('orders').insert([orderPayload])
-        if (orderResult.error) throw orderResult.error
-
-        const stockResults = await Promise.all(
-          [...productUpdates.values()].map((entry) => {
-            const payload = {
-              stock_json: entry.stock,
-              stock: totalStock(entry.stock),
-              sales_count: entry.sales_count,
-              description: composeProductDescription({ ...entry.product, package_stock: entry.package_stock }),
-            }
-            return supabase.from('products').update(payload).eq('id', entry.product.id)
-          })
-        )
-
-        const stockError = stockResults.find((result) => result.error)?.error
-        if (stockError) throw stockError
-
-        fetchProducts()
-        if (route === 'admin' && isAdminAuthenticated) fetchOrders()
-      })
-      .catch((error) => {
-        console.error('WhatsApp abierto, pero fallo el guardado en Supabase:', error)
-      })
   }
 
   const handleLogin = () => {
