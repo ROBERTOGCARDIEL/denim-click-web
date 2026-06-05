@@ -731,7 +731,7 @@ function getPackagePieces(product) {
 }
 
 function getPackageUnitPrice(product) {
-  return Number(product?.special_price || product?.price_tier10 || product?.price || 0)
+  return Number(product?.price_tier10 || product?.special_price || product?.price || 0)
 }
 
 function getCartItemPieces(item) {
@@ -749,7 +749,7 @@ function getCartItemMaxQuantity(item) {
 }
 
 function getCartItemUnitPrice(item, getProductUnitPrice) {
-  if (item?.packageMode) return getPackageUnitPrice(item.product)
+  if (item?.packageMode) return getProductUnitPrice(item.product)
   return getProductUnitPrice(item.product)
 }
 
@@ -2447,6 +2447,8 @@ function ProductCard({
   onOpenGallery,
   onOpenQuickView,
   specialClientSession,
+  getCartUnitPrice,
+  totalPieces,
   isMobile,
   fetchProductImages,
 }) {
@@ -2457,7 +2459,18 @@ function ProductCard({
   const stockForSelected = Number(product.stock?.[activeSize] || 0)
   const availableStock = totalStock(product.stock)
   const packageStock = Number(product.package_stock || 0)
-  const packageUnitPrice = getPackageUnitPrice(product)
+  const hasSizeStock = availableStock > 0
+  const hasPackageStock = packageStock > 0
+  const isCompletelyOut = !hasSizeStock && !hasPackageStock
+  const specialPriceUnlocked = specialClientSession?.active && (specialClientSession.client_tier !== 'Plata' || Number(totalPieces || 0) >= 10)
+  const packageUnitPrice = specialPriceUnlocked && getCartUnitPrice
+    ? Number(getCartUnitPrice(product) || getPackageUnitPrice(product))
+    : getPackageUnitPrice(product)
+
+  useEffect(() => {
+    if (pickerMode === 'sizes' && !hasSizeStock && hasPackageStock) setPickerMode('package')
+    if (pickerMode === 'package' && !hasPackageStock && hasSizeStock) setPickerMode('sizes')
+  }, [pickerMode, hasSizeStock, hasPackageStock])
 
   const setPackageQuantity = (qty) => {
     const clean = Math.max(1, Math.min(Number(qty || 1), Math.max(1, packageStock)))
@@ -2531,10 +2544,10 @@ function ProductCard({
             {product.is_new ? <Badge bg="#111315" color="#fff">Nuevo</Badge> : null}
             {product.sales_count > 0 ? <Badge bg="#b7791f" color="#fff">Mas vendido</Badge> : null}
             <Badge
-              bg={availableStock > 0 ? '#ecfdf5' : '#fef2f2'}
-              color={availableStock > 0 ? '#065f46' : '#991b1b'}
+              bg={!isCompletelyOut ? '#ecfdf5' : '#fef2f2'}
+              color={!isCompletelyOut ? '#065f46' : '#991b1b'}
             >
-              {availableStock > 0 ? availableStock + ' disponibles' : 'Agotado'}
+              {!isCompletelyOut ? (availableStock + packageStock * getPackagePieces(product)) + ' disponibles' : 'Agotado'}
             </Badge>
           </div>
         ) : null}
@@ -2571,20 +2584,24 @@ function ProductCard({
         ) : null}
 
         <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {[['sizes', 'Tallas'], ['package', 'Paquete']].map(([key, label]) => (
+          {[
+            ['sizes', 'Tallas', hasSizeStock],
+            ['package', 'Paquete', hasPackageStock],
+          ].filter(([, , enabled]) => enabled || isCompletelyOut).map(([key, label, enabled]) => (
             <button
               key={key}
               type="button"
-              onClick={() => setPickerMode(key)}
+              onClick={() => enabled && setPickerMode(key)}
+              disabled={!enabled}
               style={{
                 border: pickerMode === key ? '2px solid #111315' : '1px solid #d1d5db',
-                background: pickerMode === key ? '#111315' : '#fff',
-                color: pickerMode === key ? '#fff' : '#111315',
+                background: !enabled ? '#f3f4f6' : pickerMode === key ? '#111315' : '#fff',
+                color: !enabled ? '#9ca3af' : pickerMode === key ? '#fff' : '#111315',
                 borderRadius: 999,
                 padding: isMobile ? '6px 10px' : '7px 12px',
                 fontSize: isMobile ? 11 : 12,
                 fontWeight: 900,
-                cursor: 'pointer',
+                cursor: enabled ? 'pointer' : 'not-allowed',
               }}
             >
               {label}
@@ -2594,7 +2611,7 @@ function ProductCard({
 
         {isMobile ? (
           <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-            {pickerMode === 'package' ? (
+            {pickerMode === 'package' && hasPackageStock ? (
               <div style={{ border: '1px solid #e5dfd4', borderRadius: 12, padding: 10, background: '#fbfaf7', display: 'grid', gap: 8 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                   <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 900 }}>Entallado</span>
@@ -2615,7 +2632,7 @@ function ProductCard({
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : hasSizeStock ? (
               <>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               {(product.sizes || []).slice(0, 8).map((size) => {
@@ -2682,6 +2699,8 @@ function ProductCard({
               </div>
             ) : null}
               </>
+            ) : (
+              <p style={{ margin: 0, color: '#991b1b', fontWeight: 900, fontSize: 12 }}>Producto agotado.</p>
             )}
           </div>
         ) : (
@@ -2704,14 +2723,18 @@ function ProductCard({
                     <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(product.price_tier10)}</div>
                   </div>
                 </div>
-              ) : (
+              ) : specialPriceUnlocked ? (
                 <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 12, padding: 10, fontSize: 13, color: '#065f46', fontWeight: 700 }}>
                   Precio especial activo para cliente {specialClientSession.client_tier}
+                </div>
+              ) : (
+                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: 10, fontSize: 13, color: '#9a3412', fontWeight: 700 }}>
+                  Precio Plata se activa al completar 10 piezas.
                 </div>
               )}
             </div>
 
-            {pickerMode === 'package' ? (
+            {pickerMode === 'package' && hasPackageStock ? (
               <div style={{ marginTop: 10, border: '1px solid #e5dfd4', borderRadius: 12, padding: 12, background: '#fbfaf7', display: 'grid', gap: 10 }}>
                 <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(3, 1fr)' }}>
                   <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Entallado</small><div style={{ fontWeight: 900 }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</div></div>
@@ -2725,7 +2748,7 @@ function ProductCard({
                   <button type="button" onClick={addPackage} disabled={packageStock <= 0} style={{ ...styles.buttonPrimary, flex: 1, opacity: packageStock <= 0 ? 0.5 : 1 }}>Agregar paquete</button>
                 </div>
               </div>
-            ) : (
+            ) : hasSizeStock ? (
               <>
             <div style={{ marginTop: 10 }}>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -2779,7 +2802,7 @@ function ProductCard({
             ) : null}
 
             </>
-            )}
+            ) : null}
 
             <button
               type="button"
@@ -2878,13 +2901,17 @@ function ProductQuickView({
   const displayPrice = product ? (specialPriceUnlocked ? Number(getCartUnitPrice?.(product) || getProductBasePrice(product)) : getProductBasePrice(product)) : 0
   const packagePieces = product ? getPackagePieces(product) : 10
   const packageStock = product ? Number(product.package_stock || 0) : 0
-  const packageUnitPrice = product ? getPackageUnitPrice(product) : 0
+  const hasSizeStock = availableStock > 0
+  const hasPackageStock = packageStock > 0
+  const isCompletelyOut = !hasSizeStock && !hasPackageStock
+  const packageUnitPrice = product ? (specialPriceUnlocked ? Number(getCartUnitPrice?.(product) || getPackageUnitPrice(product)) : getPackageUnitPrice(product)) : 0
   const [detailMode, setDetailMode] = useState('sizes')
 
   useEffect(() => {
     if (!open || !product) return
     setImageIndex(0)
     setPackageQty(1)
+    setDetailMode(totalStock(product.stock) > 0 ? 'sizes' : Number(product.package_stock || 0) > 0 ? 'package' : 'sizes')
     const firstAvailable = (product.sizes || []).find((size) => Number(product.stock?.[size] || 0) > 0)
     const existing = selectedConfig[product.id]
     if (!existing?.size || Number(product.stock?.[existing.size] || 0) <= 0) {
@@ -2897,6 +2924,12 @@ function ProductQuickView({
       }))
     }
   }, [open, product, selectedConfig, setSelectedConfig])
+
+  useEffect(() => {
+    if (!open || !product) return
+    if (detailMode === 'sizes' && !hasSizeStock && hasPackageStock) setDetailMode('package')
+    if (detailMode === 'package' && !hasPackageStock && hasSizeStock) setDetailMode('sizes')
+  }, [open, product, detailMode, hasSizeStock, hasPackageStock])
 
   if (!open || !product) return null
 
@@ -3118,19 +3151,23 @@ function ProductQuickView({
           </div>
 
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {[['sizes', 'Tallas'], ['package', 'Paquete']].map(([key, label]) => (
+            {[
+              ['sizes', 'Tallas', hasSizeStock],
+              ['package', 'Paquete', hasPackageStock],
+            ].filter(([, , enabled]) => enabled || isCompletelyOut).map(([key, label, enabled]) => (
               <button
                 key={key}
                 type="button"
-                onClick={() => setDetailMode(key)}
+                onClick={() => enabled && setDetailMode(key)}
+                disabled={!enabled}
                 style={{
                   border: detailMode === key ? '2px solid #111315' : '1px solid #d1d5db',
-                  background: detailMode === key ? '#111315' : '#fff',
-                  color: detailMode === key ? '#fff' : '#111315',
+                  background: !enabled ? '#f3f4f6' : detailMode === key ? '#111315' : '#fff',
+                  color: !enabled ? '#9ca3af' : detailMode === key ? '#fff' : '#111315',
                   borderRadius: 999,
                   padding: '9px 14px',
                   fontWeight: 900,
-                  cursor: 'pointer',
+                  cursor: enabled ? 'pointer' : 'not-allowed',
                 }}
               >
                 {label}
@@ -3138,7 +3175,13 @@ function ProductQuickView({
             ))}
           </div>
 
-          {detailMode === 'sizes' ? (
+          {isCompletelyOut ? (
+            <div style={{ border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b', borderRadius: 8, padding: 14, fontWeight: 900 }}>
+              Producto agotado por tallas y por paquete.
+            </div>
+          ) : null}
+
+          {detailMode === 'sizes' && hasSizeStock ? (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
               <p style={{ margin: 0, fontWeight: 900 }}>Seleccionar talla</p>
@@ -3175,7 +3218,7 @@ function ProductQuickView({
           </div>
           ) : null}
 
-          {detailMode === 'package' ? (
+          {detailMode === 'package' && hasPackageStock ? (
           <div style={{ border: '1px solid #e5dfd4', borderRadius: 8, padding: 14, background: '#fbfaf7' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <ShoppingBag size={18} />
@@ -3224,7 +3267,7 @@ function ProductQuickView({
           </div>
           ) : null}
 
-          {detailMode === 'sizes' ? (
+          {detailMode === 'sizes' && hasSizeStock ? (
           <div>
             <p style={{ margin: '0 0 10px', fontWeight: 900 }}>Cantidad</p>
             <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
@@ -5711,8 +5754,18 @@ function StoreView({
 
   const scrollToHelpSection = () => {
     setHelpMenuOpen(false)
-    const target = document.getElementById('ayuda')
-    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setStoreAudience('Todo')
+    setStoreCategory('Todos')
+    setStoreFit('Todos')
+    setStoreBrand('Todas')
+    setSearch('')
+    setOpenMegaMenu(false)
+    setMobileMenuOpen(false)
+    setShowHomeCatalog(false)
+    window.setTimeout(() => {
+      const target = document.getElementById('ayuda')
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 80)
   }
 
   const openImprovePriceInfo = () => {
@@ -6283,6 +6336,8 @@ function StoreView({
                   onOpenGallery={openGalleryProduct}
                   onOpenQuickView={openQuickViewProduct}
                   specialClientSession={specialClientSession}
+                  getCartUnitPrice={getCartUnitPrice}
+                  totalPieces={totalPieces}
                   isMobile={isMobile}
                   fetchProductImages={fetchProductImages}
                 />
