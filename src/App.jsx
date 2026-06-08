@@ -2175,7 +2175,7 @@ function ProductMediaCarousel({
   }
 
   useEffect(() => {
-    if (!isMobile || variant !== 'card' || !fetchProductImages || images.length > 1) return undefined
+    if (variant !== 'card' || !fetchProductImages || images.length > 1) return undefined
     const node = carouselRef.current
     if (!node) return undefined
 
@@ -2196,9 +2196,9 @@ function ProductMediaCarousel({
     let delayId = null
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return
-      delayId = window.setTimeout(loadVisibleImages, 120)
+      delayId = window.setTimeout(loadVisibleImages, isMobile ? 180 : 260)
       observer.disconnect()
-    }, { rootMargin: '220px 0px' })
+    }, { rootMargin: isMobile ? '180px 0px' : '360px 0px' })
 
     observer.observe(node)
     return () => {
@@ -5650,6 +5650,7 @@ function StoreView({
   logoutSpecialClient,
   getCartUnitPrice,
   fetchProductImages,
+  prefetchProductImages,
 }) {
   const [openMegaMenu, setOpenMegaMenu] = useState(false)
   const [megaAudience, setMegaAudience] = useState('Hombre')
@@ -5815,6 +5816,18 @@ function StoreView({
     const start = (currentPage - 1) * pageSize
     return filteredProducts.slice(start, start + pageSize)
   }, [filteredProducts, currentPage, pageSize])
+
+  useEffect(() => {
+    if (!prefetchProductImages) return undefined
+    const visibleIds = [
+      ...topProducts.map((product) => product.id),
+      ...paginatedProducts.slice(0, isMobile ? 8 : 14).map((product) => product.id),
+    ]
+    const id = window.setTimeout(() => {
+      prefetchProductImages(visibleIds)
+    }, isMobile ? 450 : 250)
+    return () => window.clearTimeout(id)
+  }, [isMobile, paginatedProducts, prefetchProductImages, topProducts])
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages)
@@ -7130,6 +7143,40 @@ export default function App() {
     return images
   }
 
+  async function prefetchProductImages(productIds) {
+    const ids = uniqueValues((productIds || []).map((id) => String(id || '')).filter(Boolean))
+      .filter((id) => !productImagesCacheRef.current.has(id))
+
+    if (!ids.length) return
+
+    const { data, error } = await supabase
+      .from('products')
+      .select('id,images,images_json')
+      .in('id', ids)
+
+    if (error) {
+      console.warn('No se pudieron precargar imagenes:', error.message)
+      return
+    }
+
+    ;(data || []).forEach((row) => {
+      let images = []
+      if (Array.isArray(row.images_json)) {
+        images = row.images_json.filter(Boolean)
+      } else if (typeof row.images_json === 'string' && row.images_json.trim()) {
+        try {
+          const parsed = JSON.parse(row.images_json)
+          images = Array.isArray(parsed) ? parsed.filter(Boolean) : []
+        } catch {
+          images = row.images ? [row.images] : []
+        }
+      } else {
+        images = row.images ? [row.images] : []
+      }
+      productImagesCacheRef.current.set(String(row.id), images)
+    })
+  }
+
   async function fetchSpecialClients() {
     const { data, error } = await supabase.from('special_clients').select('*').order('created_at', { ascending: false })
     if (error) {
@@ -7663,6 +7710,7 @@ export default function App() {
           logoutSpecialClient={logoutSpecialClient}
           getCartUnitPrice={getCartUnitPrice}
           fetchProductImages={fetchProductImages}
+          prefetchProductImages={prefetchProductImages}
         />
       ) : isAdminAuthenticated ? (
         <>
