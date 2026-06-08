@@ -2826,7 +2826,7 @@ function ProductCard({
   )
 }
 
-function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuickView, fetchProductImages }) {
+function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuickView, fetchProductImages, cardBasis }) {
   return (
     <article
       style={{
@@ -2836,7 +2836,7 @@ function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuick
         border: isMobile ? '1px solid #e5e7eb' : styles.card.border,
         boxShadow: isMobile ? '0 2px 8px rgba(0,0,0,0.05)' : styles.card.boxShadow,
         background: '#fff',
-        flex: isMobile ? '0 0 calc(100vw - 36px)' : undefined,
+        flex: cardBasis ? `0 0 ${cardBasis}` : isMobile ? '0 0 calc(100vw - 36px)' : undefined,
       }}
     >
       <ProductMediaCarousel
@@ -5696,17 +5696,27 @@ function StoreView({
   const promoProducts = useMemo(() => activeProducts.filter((p) => p.is_offer && getCover(p)), [activeProducts])
   const offerProduct = promoProducts.length ? promoProducts[promoIndex % promoProducts.length] : heroProduct
   const homeHeroProduct = offerProduct || heroProduct
-  const topProducts = useMemo(() => {
+  const topRequestedProducts = useMemo(() => {
     return [...featuredProducts]
       .sort((a, b) => Number(b.sales_count || 0) - Number(a.sales_count || 0) || new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-      .slice(0, 3)
+      .slice(0, 10)
   }, [featuredProducts])
+  const topProducts = useMemo(() => {
+    const selected = new Map()
+    topRequestedProducts.forEach((product) => selected.set(String(product.id), product))
+    promoProducts.forEach((product) => selected.set(String(product.id), product))
+    return Array.from(selected.values())
+  }, [promoProducts, topRequestedProducts])
   const totalPieces = useMemo(() => getCartTotalPieces(cart), [cart])
   
   const firstClientName = specialClientSession?.name
     ? String(specialClientSession.name).trim().split(' ')[0]
     : ''
   const isHomeView = storeAudience === 'Todo' && storeCategory === 'Todos' && storeBrand === 'Todas' && storeFit === 'Todos' && !search.trim()
+  const featuredVisibleCount = isMobile ? 1 : 3
+  const featuredMaxIndex = Math.max(0, topProducts.length - featuredVisibleCount)
+  const featuredGap = isMobile ? 14 : 22
+  const featuredCardBasis = isMobile ? 'calc(100vw - 74px)' : 'calc((100% - 44px) / 3)'
 
   const openOrderStatusModal = (queryValue = '') => {
     setStatusInitialQuery(String(queryValue || '').trim())
@@ -5820,7 +5830,7 @@ function StoreView({
   useEffect(() => {
     if (!prefetchProductImages) return undefined
     const visibleIds = [
-      ...topProducts.map((product) => product.id),
+      ...topProducts.slice(0, isMobile ? 6 : 10).map((product) => product.id),
       ...paginatedProducts.slice(0, isMobile ? 8 : 14).map((product) => product.id),
     ]
     const id = window.setTimeout(() => {
@@ -5849,16 +5859,16 @@ function StoreView({
   }, [isHomeView, isMobile])
 
   useEffect(() => {
-    if (!isHomeView || !isMobile || topProducts.length <= 1 || featuredPaused) return undefined
+    if (!isHomeView || topProducts.length <= featuredVisibleCount || featuredPaused) return undefined
     const id = window.setInterval(() => {
-      setFeaturedIndex((prev) => (prev + 1) % topProducts.length)
-    }, 3600)
+      setFeaturedIndex((prev) => (prev >= featuredMaxIndex ? 0 : prev + 1))
+    }, isMobile ? 3200 : 3000)
     return () => window.clearInterval(id)
-  }, [featuredPaused, isHomeView, isMobile, topProducts.length])
+  }, [featuredMaxIndex, featuredPaused, featuredVisibleCount, isHomeView, isMobile, topProducts.length])
 
   useEffect(() => {
-    if (featuredIndex >= topProducts.length) setFeaturedIndex(0)
-  }, [featuredIndex, topProducts.length])
+    if (featuredIndex > featuredMaxIndex) setFeaturedIndex(0)
+  }, [featuredIndex, featuredMaxIndex])
 
   useEffect(() => {
     return () => {
@@ -5867,15 +5877,13 @@ function StoreView({
   }, [])
 
   const pauseFeaturedCarousel = () => {
-    if (!isMobile) return
     setFeaturedPaused(true)
     if (featuredResumeRef.current) window.clearTimeout(featuredResumeRef.current)
   }
 
   const resumeFeaturedCarouselSoon = () => {
-    if (!isMobile) return
     if (featuredResumeRef.current) window.clearTimeout(featuredResumeRef.current)
-    featuredResumeRef.current = window.setTimeout(() => setFeaturedPaused(false), 1600)
+    featuredResumeRef.current = window.setTimeout(() => setFeaturedPaused(false), isMobile ? 1600 : 250)
   }
 
   const goHome = () => {
@@ -6217,26 +6225,28 @@ function StoreView({
               </div>
 
               <div
-                className={isMobile ? 'featured-mobile-window' : undefined}
+                className="featured-products-window"
                 style={{
-                  display: isMobile ? 'block' : 'grid',
-                  overflow: isMobile ? 'hidden' : 'visible',
+                  display: 'block',
+                  overflow: 'hidden',
+                  touchAction: 'pan-y',
                 }}
               >
                 <div
-                  className={isMobile ? 'featured-mobile-track' : undefined}
+                  className="featured-products-track"
                   onTouchStart={pauseFeaturedCarousel}
                   onTouchEnd={resumeFeaturedCarouselSoon}
+                  onTouchCancel={resumeFeaturedCarouselSoon}
                   onMouseEnter={pauseFeaturedCarousel}
                   onMouseLeave={resumeFeaturedCarouselSoon}
                   style={{
-                    display: isMobile ? 'flex' : 'grid',
-                    gap: isMobile ? 14 : 22,
-                    gridTemplateColumns: isMobile ? undefined : 'repeat(3, minmax(0, 1fr))',
+                    display: 'flex',
+                    gap: featuredGap,
                     alignItems: 'start',
-                    width: isMobile ? 'max-content' : 'auto',
-                    transform: isMobile ? 'translateX(calc(-' + featuredIndex * 100 + 'vw + ' + featuredIndex * 22 + 'px))' : undefined,
-                    transition: isMobile ? 'transform .55s ease' : undefined,
+                    width: 'max-content',
+                    transform: `translateX(calc(-${featuredIndex} * (${featuredCardBasis} + ${featuredGap}px)))`,
+                    transition: featuredPaused ? 'none' : 'transform .65s cubic-bezier(.2,.8,.2,1)',
+                    willChange: 'transform',
                   }}
                 >
                   {topProducts.map((product) => (
@@ -6247,6 +6257,7 @@ function StoreView({
                       onOpenGallery={openGalleryProduct}
                       onOpenQuickView={openQuickViewProduct}
                       fetchProductImages={fetchProductImages}
+                      cardBasis={featuredCardBasis}
                     />
                   ))}
                 </div>
