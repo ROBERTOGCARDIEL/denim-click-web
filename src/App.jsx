@@ -2251,7 +2251,7 @@ function ProductMediaCarousel({
         width: '100%',
         background: '#ebe6dc',
         cursor: 'pointer',
-        aspectRatio: variant === 'quick' ? '4 / 5.1' : isMobile ? '4 / 4.9' : '4 / 4.35',
+        aspectRatio: variant === 'quick' ? '4 / 5.1' : variant === 'featured' ? (isMobile ? '4 / 4.35' : '4 / 4.05') : isMobile ? '4 / 4.9' : '4 / 4.35',
         position: 'relative',
         overflow: 'hidden',
         touchAction: 'pan-y',
@@ -2842,11 +2842,12 @@ function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuick
       <ProductMediaCarousel
         product={product}
         isMobile={isMobile}
+        variant="featured"
         onOpenGallery={onOpenGallery}
         onOpenQuickView={onOpenQuickView}
         fetchProductImages={fetchProductImages}
       />
-      <div style={{ padding: isMobile ? '12px 0 18px' : 18 }}>
+      <div style={{ padding: isMobile ? '12px 0 18px' : '14px 16px 18px' }}>
         <button
           type="button"
           onClick={() => onOpenQuickView(product)}
@@ -2859,7 +2860,7 @@ function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuick
             textAlign: 'left',
           }}
         >
-          <h3 style={{ margin: 0, fontSize: isMobile ? 17 : 24, lineHeight: 1.12, fontWeight: 950 }}>
+          <h3 style={{ margin: 0, fontSize: isMobile ? 17 : 19, lineHeight: 1.12, fontWeight: 950 }}>
             {product.name}
           </h3>
         </button>
@@ -3387,6 +3388,8 @@ function CartDrawer({
     setCart((prev) => prev.filter((_, i) => i !== index))
   }
 
+  const registeredClientActive = Boolean(specialClientSession?.active)
+
   if (!open) return null
 
   return (
@@ -3595,16 +3598,38 @@ function CartDrawer({
           <div style={{ display: 'grid', gap: 12 }}>
             <h3 style={{ margin: 0, fontSize: 22 }}>Datos para solicitar</h3>
 
+            {registeredClientActive ? (
+              <div
+                style={{
+                  border: '1px solid #d8d3c8',
+                  borderRadius: 18,
+                  padding: 14,
+                  background: '#fbfaf7',
+                  color: '#374151',
+                  lineHeight: 1.45,
+                }}
+              >
+                <strong style={{ color: '#111315' }}>Cliente registrado</strong>
+                <p style={{ margin: '6px 0 0' }}>
+                  {specialClientSession.name || specialClientSession.client_code}
+                  {specialClientSession.phone ? ' · ' + specialClientSession.phone : ''}
+                </p>
+                <p style={{ margin: '4px 0 0', color: '#6b7280' }}>
+                  Solo confirma como quieres recibir tu pedido.
+                </p>
+              </div>
+            ) : null}
+
             <input
-              style={styles.input}
+              style={{ ...styles.input, display: registeredClientActive ? 'none' : undefined }}
               placeholder="Nombre del cliente"
               value={customer.name}
               onChange={(e) => setCustomer((p) => ({ ...p, name: e.target.value }))}
             />
 
             <input
-              style={styles.input}
-              placeholder="Teléfono"
+              style={{ ...styles.input, display: registeredClientActive ? 'none' : undefined }}
+              placeholder="Telefono"
               value={customer.phone}
               onChange={(e) => setCustomer((p) => ({ ...p, phone: e.target.value }))}
             />
@@ -5716,7 +5741,7 @@ function StoreView({
   const featuredVisibleCount = isMobile ? 1 : 3
   const featuredMaxIndex = Math.max(0, topProducts.length - featuredVisibleCount)
   const featuredGap = isMobile ? 14 : 22
-  const featuredCardBasis = isMobile ? 'calc(100vw - 74px)' : 'calc((100% - 44px) / 3)'
+  const featuredCardBasis = isMobile ? '76vw' : 'clamp(300px, 28vw, 420px)'
 
   const openOrderStatusModal = (queryValue = '') => {
     setStatusInitialQuery(String(queryValue || '').trim())
@@ -7421,13 +7446,21 @@ export default function App() {
       return
     }
 
-    if (!customer.name.trim() || !customer.phone.trim()) {
+    const isRegisteredClient = Boolean(specialClientSession?.active)
+    const requestCustomerName = isRegisteredClient
+      ? String(specialClientSession.name || specialClientSession.client_code || '').trim()
+      : String(customer.name || '').trim()
+    const requestCustomerPhone = isRegisteredClient
+      ? String(specialClientSession.phone || customer.phone || '').trim()
+      : String(customer.phone || '').trim()
+
+    if (!isRegisteredClient && (!requestCustomerName || !requestCustomerPhone)) {
       alert('Pon al menos nombre y telefono.')
       return
     }
 
-    const phoneDigits = customer.phone.replace(/\D/g, '')
-    if (phoneDigits.length < 10) {
+    const phoneDigits = requestCustomerPhone.replace(/\D/g, '')
+    if (!isRegisteredClient && phoneDigits.length < 10) {
       alert('Numero de telefono invalido.')
       return
     }
@@ -7484,7 +7517,7 @@ export default function App() {
     ].filter(Boolean)
 
     const orderPayload = {
-      customer_name: customer.name || '',
+      customer_name: requestCustomerName || '',
       customer_phone: phoneDigits,
       customer_city: customer.city || '',
       delivery: shippingLabel,
@@ -7533,8 +7566,8 @@ export default function App() {
     const msg =
       'PEDIDO DENIM CLICK\n\n' +
       'Numero de pedido: ' + orderNumber + '\n' +
-      'Cliente: ' + customer.name + '\n' +
-      'Telefono: ' + customer.phone + '\n' +
+      'Cliente: ' + requestCustomerName + '\n' +
+      'Telefono: ' + (requestCustomerPhone || '-') + '\n' +
       'Ciudad: ' + (customer.city || '-') + '\n' +
       'Tipo de entrega: ' + shippingLabel +
       shippingText +
@@ -7800,3 +7833,4 @@ export default function App() {
     </div>
   )
 }
+
