@@ -3,6 +3,7 @@ import {
   Search,
   Menu,
   X,
+  ChevronLeft,
   ChevronRight,
   ShoppingBag,
   LogOut,
@@ -106,6 +107,7 @@ const QUALITY_PRICE_PRESETS = [
   { quality: 'L REMATE', group: 'PANTALON', prices: { Plata: 205, Oro: 205, Esmeralda: 205, Platino: 209, Diamante: 199, Colaborador: 205, Imperial: 0 }, retail: { offer_price: 205, price_tier10: 209, price_tier3: 209, price: 209 } },
   { quality: 'PY L', group: 'PLAYERAS', prices: { Plata: 150, Oro: 145, Esmeralda: 145, Platino: 145, Diamante: 145, Colaborador: 145, Imperial: 0 }, retail: { offer_price: 99, price_tier10: 150, price_tier3: 199, price: 299 } },
   { quality: 'PYP', group: 'PLAYERAS', prices: { Plata: 175, Oro: 175, Esmeralda: 175, Platino: 159, Diamante: 159, Colaborador: 175, Imperial: 0 }, retail: { offer_price: 139, price_tier10: 185, price_tier3: 299, price: 399 } },
+  { quality: 'PYPIMA', group: 'PLAYERAS', prices: { Plata: 185, Oro: 185, Esmeralda: 185, Platino: 185, Diamante: 185, Colaborador: 185, Imperial: 0 }, retail: { offer_price: 185, price_tier10: 185, price_tier3: 299, price: 399 } },
   { quality: 'PY DLX', group: 'PLAYERAS', prices: { Plata: 215, Oro: 215, Esmeralda: 215, Platino: 215, Diamante: 215, Colaborador: 215, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 230, price_tier3: 399, price: 499 } },
   { quality: 'PY ML', group: 'PLAYERAS', prices: { Plata: 210, Oro: 195, Esmeralda: 195, Platino: 185, Diamante: 185, Colaborador: 195, Imperial: 0 }, retail: { offer_price: 185, price_tier10: 210, price_tier3: 299, price: 399 } },
   { quality: 'PY OVER', group: 'PLAYERAS', prices: { Plata: 250, Oro: 240, Esmeralda: 240, Platino: 240, Diamante: 240, Colaborador: 240, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 250, price_tier3: 399, price: 499 } },
@@ -115,6 +117,7 @@ const QUALITY_PRICE_PRESETS = [
   { quality: 'POLO', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 215, Oro: 195, Esmeralda: 195, Platino: 189, Diamante: 189, Colaborador: 195, Imperial: 0 }, retail: { offer_price: 155, price_tier10: 219, price_tier3: 299, price: 399 } },
   { quality: 'POLO DELUX', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 299, Oro: 299, Esmeralda: 299, Platino: 299, Diamante: 299, Colaborador: 299, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 299, price_tier3: 399, price: 499 } },
   { quality: 'CAM', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 279, Oro: 275, Esmeralda: 275, Platino: 269, Diamante: 269, Colaborador: 275, Imperial: 0 }, retail: { offer_price: 239, price_tier10: 285, price_tier3: 299, price: 399 } },
+  { quality: 'CAMISA P', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 359, Oro: 359, Esmeralda: 359, Platino: 359, Diamante: 359, Colaborador: 359, Imperial: 0 }, retail: { offer_price: 359, price_tier10: 359, price_tier3: 499, price: 599 } },
   { quality: 'CAM OAKTREE', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 289, Oro: 289, Esmeralda: 289, Platino: 289, Diamante: 289, Colaborador: 289, Imperial: 0 }, retail: { offer_price: 239, price_tier10: 289, price_tier3: 399, price: 499 } },
   { quality: 'SUD', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 355, Oro: 355, Esmeralda: 355, Platino: 355, Diamante: 355, Colaborador: 355, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 355, price_tier3: 399, price: 499 } },
   { quality: 'SUETER', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 320, Oro: 310, Esmeralda: 310, Platino: 299, Diamante: 299, Colaborador: 310, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 320, price_tier3: 399, price: 499 } },
@@ -621,7 +624,9 @@ function getProductBasePrice(product) {
 
 function isLastUnitsProduct(product) {
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
-  return totalStock(product?.stock) <= 4 || stockEntries.length <= 1
+  const loosePieces = totalStock(product?.stock)
+  if (loosePieces <= 0) return false
+  return loosePieces < 5 || stockEntries.length === 1
 }
 
 function generateOrderNumber() {
@@ -2228,6 +2233,7 @@ function ProductMediaCarousel({
   return (
     <div
       ref={carouselRef}
+      data-product-media="true"
       role="button"
       tabIndex={0}
       aria-label={'Ver detalle de ' + product.name}
@@ -5693,8 +5699,10 @@ function StoreView({
   const [promoIndex, setPromoIndex] = useState(0)
   const [featuredIndex, setFeaturedIndex] = useState(0)
   const [featuredPaused, setFeaturedPaused] = useState(false)
+  const [lastUnitsSize, setLastUnitsSize] = useState('Todas')
   const [heroVideoReady, setHeroVideoReady] = useState(false)
   const featuredResumeRef = useRef(null)
+  const featuredTouchRef = useRef(null)
 
   useEffect(() => {
     if (specialClientSession?.active) setLoginOpen(false)
@@ -5711,6 +5719,21 @@ function StoreView({
         .filter((product) => storeBrand === 'Todas' || product.brand === storeBrand)
         .map((product) => product.subcategory)
         .filter(Boolean)
+    )
+  }, [products, storeAudience, storeCategory, storeBrand])
+  const lastUnitsSizeOptions = useMemo(() => {
+    return uniqueValues(
+      products
+        .filter((product) => product.active && productHasVisibleStock(product))
+        .filter((product) => storeAudience === 'Todo' || product.audience === storeAudience)
+        .filter((product) => storeCategory === 'Todos' || product.category === storeCategory)
+        .filter((product) => storeBrand === 'Todas' || product.brand === storeBrand)
+        .filter(isLastUnitsProduct)
+        .flatMap((product) =>
+          Object.entries(product.stock || {})
+            .filter(([, qty]) => Number(qty || 0) > 0)
+            .map(([size]) => size)
+        )
     )
   }, [products, storeAudience, storeCategory, storeBrand])
   const activeProducts = useMemo(() => products.filter((p) => p.active), [products])
@@ -5815,8 +5838,12 @@ function StoreView({
     if (storeAudience !== 'Todo') list = list.filter((p) => p.audience === storeAudience)
     if (storeCategory !== 'Todos') list = list.filter((p) => p.category === storeCategory)
     if (storeBrand !== 'Todas') list = list.filter((p) => p.brand === storeBrand)
-    if (storeFit === LAST_UNITS_FILTER) list = list.filter((p) => isLastUnitsProduct(p))
-    else if (storeFit !== 'Todos') list = list.filter((p) => p.subcategory === storeFit)
+    if (storeFit === LAST_UNITS_FILTER) {
+      list = list.filter((p) => isLastUnitsProduct(p))
+      if (lastUnitsSize !== 'Todas') {
+        list = list.filter((p) => Number(p.stock?.[lastUnitsSize] || 0) > 0)
+      }
+    } else if (storeFit !== 'Todos') list = list.filter((p) => p.subcategory === storeFit)
 
     if (search.trim()) {
       const q = search.toLowerCase()
@@ -5832,7 +5859,7 @@ function StoreView({
     })
 
     return list
-  }, [products, storeAudience, storeCategory, storeBrand, storeFit, search])
+  }, [products, storeAudience, storeCategory, storeBrand, storeFit, lastUnitsSize, search])
 
   useEffect(() => {
     setPage(1)
@@ -5843,6 +5870,16 @@ function StoreView({
       setStoreFit('Todos')
     }
   }, [storeFit, visibleFits, setStoreFit])
+
+  useEffect(() => {
+    if (storeFit !== LAST_UNITS_FILTER) {
+      if (lastUnitsSize !== 'Todas') setLastUnitsSize('Todas')
+      return
+    }
+    if (lastUnitsSize !== 'Todas' && !lastUnitsSizeOptions.includes(lastUnitsSize)) {
+      setLastUnitsSize('Todas')
+    }
+  }, [storeFit, lastUnitsSize, lastUnitsSizeOptions])
 
   const pageSize = isMobile ? PRODUCT_PAGE_SIZE_MOBILE : PRODUCT_PAGE_SIZE_DESKTOP
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize))
@@ -5909,6 +5946,34 @@ function StoreView({
   const resumeFeaturedCarouselSoon = () => {
     if (featuredResumeRef.current) window.clearTimeout(featuredResumeRef.current)
     featuredResumeRef.current = window.setTimeout(() => setFeaturedPaused(false), isMobile ? 1600 : 250)
+  }
+
+  const moveFeaturedCarousel = useCallback((direction) => {
+    setFeaturedIndex((prev) => {
+      if (featuredMaxIndex <= 0) return 0
+      if (direction < 0) return prev <= 0 ? featuredMaxIndex : prev - 1
+      return prev >= featuredMaxIndex ? 0 : prev + 1
+    })
+  }, [featuredMaxIndex])
+
+  const handleFeaturedTouchStart = (event) => {
+    pauseFeaturedCarousel()
+    if (event.target?.closest?.('[data-product-media="true"]')) {
+      featuredTouchRef.current = null
+      return
+    }
+    featuredTouchRef.current = event.touches?.[0]?.clientX ?? null
+  }
+
+  const handleFeaturedTouchEnd = (event) => {
+    const start = featuredTouchRef.current
+    featuredTouchRef.current = null
+    if (typeof start === 'number') {
+      const end = event.changedTouches?.[0]?.clientX ?? start
+      const diff = start - end
+      if (Math.abs(diff) > 42) moveFeaturedCarousel(diff > 0 ? 1 : -1)
+    }
+    resumeFeaturedCarouselSoon()
   }
 
   const goHome = () => {
@@ -6247,6 +6312,48 @@ function StoreView({
                 <div>
                   <h2 style={{ margin: '6px 0 0', fontSize: isMobile ? 30 : 42 }}>Productos destacados</h2>
                 </div>
+                {!isMobile && featuredMaxIndex > 0 ? (
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                      type="button"
+                      aria-label="Ver destacados anteriores"
+                      onClick={() => moveFeaturedCarousel(-1)}
+                      onMouseEnter={pauseFeaturedCarousel}
+                      onMouseLeave={resumeFeaturedCarouselSoon}
+                      style={{
+                        width: 46,
+                        height: 46,
+                        borderRadius: 999,
+                        border: '1px solid #d1d5db',
+                        background: '#fff',
+                        display: 'grid',
+                        placeItems: 'center',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <ChevronLeft size={22} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Ver mas destacados"
+                      onClick={() => moveFeaturedCarousel(1)}
+                      onMouseEnter={pauseFeaturedCarousel}
+                      onMouseLeave={resumeFeaturedCarouselSoon}
+                      style={{
+                        width: 46,
+                        height: 46,
+                        borderRadius: 999,
+                        border: '1px solid #d1d5db',
+                        background: '#fff',
+                        display: 'grid',
+                        placeItems: 'center',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <ChevronRight size={22} />
+                    </button>
+                  </div>
+                ) : null}
               </div>
 
               <div
@@ -6259,9 +6366,12 @@ function StoreView({
               >
                 <div
                   className="featured-products-track"
-                  onTouchStart={pauseFeaturedCarousel}
-                  onTouchEnd={resumeFeaturedCarouselSoon}
-                  onTouchCancel={resumeFeaturedCarouselSoon}
+                  onTouchStart={handleFeaturedTouchStart}
+                  onTouchEnd={handleFeaturedTouchEnd}
+                  onTouchCancel={() => {
+                    featuredTouchRef.current = null
+                    resumeFeaturedCarouselSoon()
+                  }}
                   onMouseEnter={pauseFeaturedCarousel}
                   onMouseLeave={resumeFeaturedCarouselSoon}
                   style={{
@@ -6355,6 +6465,22 @@ function StoreView({
               ))}
             </select>
           </div>
+
+          {storeFit === LAST_UNITS_FILTER ? (
+            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : '260px', marginTop: 12 }}>
+              <select
+                style={styles.input}
+                value={lastUnitsSize}
+                onChange={(e) => setLastUnitsSize(e.target.value)}
+                aria-label="Filtrar ultimas piezas por talla"
+              >
+                <option value="Todas">Todas las tallas disponibles</option>
+                {lastUnitsSizeOptions.map((size) => (
+                  <option key={size} value={size}>Talla {size}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -7286,7 +7412,9 @@ export default function App() {
     if (specialSaved) {
       try {
         const parsed = JSON.parse(specialSaved)
-        setSpecialClientSession(parsed)
+        if (parsed && parsed.active !== false) {
+          setSpecialClientSession({ ...parsed, active: true })
+        }
       } catch {
         // Ignore invalid stored client sessions.
       }
@@ -7428,7 +7556,7 @@ export default function App() {
       return false
     }
 
-    const client = data[0]
+    const client = { ...data[0], active: true }
     setSpecialClientSession(client)
     localStorage.setItem(SPECIAL_CLIENT_SESSION_KEY, JSON.stringify(client))
     setSpecialCode('')
