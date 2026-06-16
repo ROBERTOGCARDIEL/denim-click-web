@@ -265,6 +265,7 @@ const BASE_CATEGORY_MAP = {
 const JEANS_FITS = ['Straight', 'Slim', 'Skinny', 'Regular', 'Relaxed', 'Baggy']
 
 const QUALITY_OPTIONS = QUALITY_PRICE_PRESETS.map((preset) => preset.quality)
+const QUALITY_SELECT_BLOCKLIST = new Set(['JEANS PREMIUM TOMMY', 'JEANS DLX', 'JEANS BASICO 514', 'PYDLX', 'PDLX'])
 
 const BRANDS = [
   'Levi’s',
@@ -308,6 +309,7 @@ const ORDER_STATUSES = [
   { value: 'nuevo', label: 'Pedido nuevo', color: '#1d4ed8', bg: '#eff6ff' },
   { value: 'confirmado_pago', label: 'Confirmado, espera de pago', color: '#92400e', bg: '#fef3c7' },
   { value: 'incompleto', label: 'Pedido incompleto', color: '#991b1b', bg: '#fef2f2' },
+  { value: 'entrega_inmediata', label: 'Compra/entrega inmediata', color: '#9a3412', bg: '#ffedd5' },
   { value: 'proceso_envio', label: 'En proceso de envio', color: '#047857', bg: '#ecfdf5' },
   { value: 'entregado', label: 'Pedido entregado', color: '#374151', bg: '#f3f4f6' },
   { value: 'cancelado', label: 'Cancelado', color: '#6b7280', bg: '#f3f4f6' },
@@ -373,6 +375,12 @@ function productHasVisibleStock(product) {
   return product?.active !== false && (totalStock(product.stock) > 0 || Number(product.package_stock || 0) > 0)
 }
 
+function productMatchesStoreAudience(product, audience) {
+  if (audience === 'Todo') return true
+  if (audience === 'Oferta') return Boolean(product?.is_offer)
+  return product?.audience === audience
+}
+
 function getStoreAudiences(products) {
   const activeAudiences = uniqueValues(
     products
@@ -388,7 +396,7 @@ function getStoreCategories(products, audience) {
   return uniqueValues(
     products
       .filter(productHasVisibleStock)
-      .filter((product) => audience === 'Todo' || product.audience === audience)
+      .filter((product) => productMatchesStoreAudience(product, audience))
       .map((product) => product.category)
   ).filter((category) => category !== 'Playera')
 }
@@ -397,7 +405,7 @@ function getStoreBrands(products, audience) {
   return uniqueValues(
     products
       .filter(productHasVisibleStock)
-      .filter((product) => audience === 'Todo' || product.audience === audience)
+      .filter((product) => productMatchesStoreAudience(product, audience))
       .map((product) => product.brand)
   )
 }
@@ -577,6 +585,72 @@ function normalizeOrderItems(items) {
 
 function orderIsArchived(status) {
   return ['entregado', 'cancelado'].includes(status)
+}
+
+function orderIsImmediate(order) {
+  return order?.status === 'entrega_inmediata' || String(order?.notes || '').toLowerCase().includes('entrega inmediata')
+}
+
+function getClientCartStorageKey(client) {
+  if (!client?.active) return ''
+  const rawKey = client.client_code || client.qr_value || client.phone || client.name || client.id
+  const key = String(rawKey || '').trim().toLowerCase().replace(/\s+/g, '-')
+  return key ? `${CART_STORAGE_KEY}_${key}` : ''
+}
+
+function readClientCart(client) {
+  if (typeof window === 'undefined') return []
+  const key = getClientCartStorageKey(client)
+  if (!key) return []
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function saveClientCart(client, cart) {
+  if (typeof window === 'undefined') return
+  const key = getClientCartStorageKey(client)
+  if (!key) return
+  try {
+    localStorage.setItem(key, JSON.stringify(Array.isArray(cart) ? cart : []))
+  } catch {
+    // Ignore storage quota issues.
+  }
+}
+
+function getOrderItemQuantity(item) {
+  return Math.max(0, Number(item?.quantity || 0))
+}
+
+function getOrderItemPieces(item) {
+  return Math.max(0, Number(item?.pieces || item?.quantity || 0))
+}
+
+function getScaledOrderItem(item, quantity) {
+  const originalQuantity = Math.max(1, getOrderItemQuantity(item))
+  const nextQuantity = Math.max(0, Math.min(Number(quantity || 0), originalQuantity))
+  const ratio = nextQuantity / originalQuantity
+  const originalPieces = getOrderItemPieces(item)
+  const originalTotal = Number(item?.total || 0)
+  return {
+    ...item,
+    quantity: nextQuantity,
+    pieces: Math.round(originalPieces * ratio),
+    total: Math.round(originalTotal * ratio),
+  }
+}
+
+function summarizeOrderItems(items) {
+  return normalizeOrderItems(items).reduce(
+    (summary, item) => ({
+      pieces: summary.pieces + getOrderItemPieces(item),
+      subtotal: summary.subtotal + Number(item.total || 0),
+    }),
+    { pieces: 0, subtotal: 0 }
+  )
 }
 
 function formatShortDate(value) {
@@ -3626,6 +3700,8 @@ function CartDrawer({
               </div>
             ) : null}
 
+            {!registeredClientActive ? (
+              <>
             <input
               style={{ ...styles.input, display: registeredClientActive ? 'none' : undefined }}
               placeholder="Nombre del cliente"
@@ -3695,6 +3771,8 @@ function CartDrawer({
               value={customer.notes}
               onChange={(e) => setCustomer((p) => ({ ...p, notes: e.target.value }))}
             />
+              </>
+            ) : null}
           </div>
         </div>
 
@@ -3830,12 +3908,17 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
   )
 
   const customBrands = uniqueValues(products.map((p) => p.brand).filter((b) => b && !BRANDS.includes(b)))
-  const customQualities = uniqueValues(products.map((p) => p.quality).filter((q) => q && !QUALITY_OPTIONS.includes(q)))
+  const customQualities = uniqueValues(
+    products
+      .map((p) => p.quality)
+      .filter((q) => q && !QUALITY_OPTIONS.includes(q) && !QUALITY_SELECT_BLOCKLIST.has(String(q).trim().toUpperCase()))
+  )
 
   const categories = getAudienceCategories(draft.audience, customCategories).filter((c) => c !== 'Playera')
   const fits = getFitsForAudience(products, draft.audience, customFits, { onlyWithStock: false })
   const brands = uniqueValues([...BRANDS, ...customBrands])
   const qualities = uniqueValues([...QUALITY_OPTIONS, ...customQualities])
+    .filter((quality) => !QUALITY_SELECT_BLOCKLIST.has(String(quality).trim().toUpperCase()))
   const hasQualityPreset = Boolean(getQualityPricePreset(draft.customQuality?.trim() || draft.quality))
   const hasCategoryPreset = !isKidsAudience(draft.audience) && Boolean(ADMIN_PRICE_PRESETS[draft.category])
   const hasPreset = hasQualityPreset || hasCategoryPreset
@@ -4925,7 +5008,8 @@ function OrdersAdmin({ orders, fetchOrders }) {
   const dashboard = useMemo(() => {
     const delivered = orders.filter((order) => order.status === 'entregado').length
     const canceled = orders.filter((order) => order.status === 'cancelado').length
-    const pending = orders.filter((order) => !orderIsArchived(order.status)).length
+    const immediate = orders.filter(orderIsImmediate).length
+    const pending = orders.filter((order) => !orderIsArchived(order.status) && !orderIsImmediate(order)).length
     const byPieces = new Map()
     const byOrders = new Map()
 
@@ -4941,6 +5025,7 @@ function OrdersAdmin({ orders, fetchOrders }) {
     return {
       delivered,
       canceled,
+      immediate,
       pending,
       topPieces: [...byPieces.values()].sort((a, b) => b.value - a.value).slice(0, 5),
       topOrders: [...byOrders.values()].sort((a, b) => b.value - a.value).slice(0, 5),
@@ -4950,7 +5035,11 @@ function OrdersAdmin({ orders, fetchOrders }) {
   const visibleOrders = useMemo(() => {
     const q = orderSearch.trim().toLowerCase()
     return orders
-      .filter((order) => (mode === 'archivados' ? orderIsArchived(order.status) : !orderIsArchived(order.status)))
+      .filter((order) => {
+        if (mode === 'inmediata') return orderIsImmediate(order)
+        if (mode === 'archivados') return orderIsArchived(order.status) && !orderIsImmediate(order)
+        return !orderIsArchived(order.status) && !orderIsImmediate(order)
+      })
       .filter((order) => {
         if (!q) return true
         return (
@@ -4971,9 +5060,10 @@ function OrdersAdmin({ orders, fetchOrders }) {
         <button type="button" style={styles.buttonSecondary} onClick={fetchOrders}>Actualizar</button>
       </div>
 
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', marginTop: 18 }}>
+      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', marginTop: 18 }}>
         {[
           ['Pendientes', dashboard.pending],
+          ['Entrega inmediata', dashboard.immediate],
           ['Entregados', dashboard.delivered],
           ['Cancelados', dashboard.canceled],
         ].map(([label, value]) => (
@@ -5011,6 +5101,7 @@ function OrdersAdmin({ orders, fetchOrders }) {
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 18 }}>
         {[
+          ['inmediata', 'Compra o entrega inmediata'],
           ['activos', 'Activos'],
           ['archivados', 'Archivados'],
         ].map(([value, label]) => (
@@ -5416,6 +5507,9 @@ function OrderStatusLookup({ specialClientSession, isMobile, variant = 'section'
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(false)
   const [hasSearched, setHasSearched] = useState(false)
+  const [expandedOrderId, setExpandedOrderId] = useState(null)
+  const [takeQuantities, setTakeQuantities] = useState({})
+  const [immediateLoading, setImmediateLoading] = useState(false)
 
   useEffect(() => {
     if (activeClient && specialPhone) setQuery(specialPhone)
@@ -5492,33 +5586,177 @@ function OrderStatusLookup({ specialClientSession, isMobile, variant = 'section'
     findOrders({ silent: true, queryOverride: clean })
   }, [activeClient, autoSearchKey, findOrders, initialQuery, open, variant])
 
+  const setTakeQuantity = (order, itemIndex, value) => {
+    const items = normalizeOrderItems(order.items_json)
+    const max = getOrderItemQuantity(items[itemIndex])
+    const clean = Math.max(0, Math.min(Number(value || 0), max))
+    setTakeQuantities((prev) => ({ ...prev, [`${order.id}-${itemIndex}`]: clean }))
+  }
+
+  const requestImmediateDelivery = async (order) => {
+    const originalItems = normalizeOrderItems(order.items_json)
+    const selectedItems = []
+    const remainingItems = []
+
+    originalItems.forEach((item, idx) => {
+      const originalQuantity = getOrderItemQuantity(item)
+      const selectedQuantity = Math.max(0, Math.min(Number(takeQuantities[`${order.id}-${idx}`] || 0), originalQuantity))
+      if (selectedQuantity > 0) selectedItems.push(getScaledOrderItem(item, selectedQuantity))
+      if (originalQuantity - selectedQuantity > 0) remainingItems.push(getScaledOrderItem(item, originalQuantity - selectedQuantity))
+    })
+
+    if (!selectedItems.length) {
+      alert('Selecciona al menos una pieza o paquete para entrega inmediata.')
+      return
+    }
+
+    const sourceNumber = getOrderNumber(order)
+    const immediateNumber = `${sourceNumber}-ENT-${String(Date.now()).slice(-5)}`
+    const selectedSummary = summarizeOrderItems(selectedItems)
+    const remainingSummary = summarizeOrderItems(remainingItems)
+    const messageItems = selectedItems
+      .map((item, idx) => {
+        const detail = item.package_mode
+          ? `${item.quantity} paquete(s) x ${item.package_pieces || item.pieces || ''} pz - ${item.package_breakdown || 'corrida por confirmar'}`
+          : `Talla ${item.size || '-'} - ${item.quantity} pz`
+        return `${idx + 1}. ${item.name}\n   ${detail}\n   Piezas: ${getOrderItemPieces(item)}\n   Importe: ${mxn(item.total)}`
+      })
+      .join('\n\n')
+
+    setImmediateLoading(true)
+    try {
+      const { error: insertError } = await supabase.from('orders').insert([{
+        customer_name: order.customer_name || '',
+        customer_phone: order.customer_phone || '',
+        customer_city: order.customer_city || '',
+        delivery: 'Entrega inmediata',
+        notes: [
+          `Numero pedido: ${immediateNumber}`,
+          `Entrega inmediata del apartado ${sourceNumber}`,
+          order.price_level ? `Tarifa: ${order.price_level}` : '',
+        ].filter(Boolean).join(' | '),
+        items_json: selectedItems,
+        total_pieces: selectedSummary.pieces,
+        subtotal: selectedSummary.subtotal,
+        price_level: order.price_level || '',
+        status: 'entrega_inmediata',
+        whatsapp_sent: true,
+      }])
+
+      if (insertError) throw insertError
+
+      const nextNotes = [
+        order.notes || '',
+        `Entrega inmediata generada: ${immediateNumber}`,
+      ].filter(Boolean).join(' | ')
+
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({
+          items_json: remainingItems,
+          total_pieces: remainingSummary.pieces,
+          subtotal: remainingSummary.subtotal,
+          notes: nextNotes,
+          status: remainingItems.length ? (order.status || 'nuevo') : 'entregado',
+        })
+        .eq('id', order.id)
+
+      if (updateError) throw updateError
+
+      const msg =
+        'ENTREGA INMEDIATA DENIM CLICK\n\n' +
+        `Del apartado ${sourceNumber} quiero estas piezas en este momento.\n` +
+        `Solicitud: ${immediateNumber}\n` +
+        `Cliente: ${order.customer_name || '-'}\n` +
+        `Telefono: ${order.customer_phone || '-'}\n\n` +
+        messageItems +
+        `\n\nTotal de piezas: ${selectedSummary.pieces}\n` +
+        `Monto a pagar ahora: ${mxn(selectedSummary.subtotal)}`
+
+      window.open('https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(msg), '_blank', 'noopener,noreferrer')
+      setTakeQuantities((prev) => {
+        const next = { ...prev }
+        originalItems.forEach((_, idx) => delete next[`${order.id}-${idx}`])
+        return next
+      })
+      await findOrders({ silent: true })
+    } catch (error) {
+      alert('No se pudo generar la entrega inmediata: ' + (error.message || 'Intenta de nuevo.'))
+    } finally {
+      setImmediateLoading(false)
+    }
+  }
+
   const orderList = orders.length > 0 ? (
     <div style={{ display: 'grid', gap: 10, marginTop: 16 }}>
       {orders.map((order) => {
         const meta = getOrderStatusMeta(order.status)
+        const items = normalizeOrderItems(order.items_json)
+        const canTakeNow = !orderIsArchived(order.status) && !orderIsImmediate(order) && items.some((item) => getOrderItemQuantity(item) > 0)
+        const expanded = expandedOrderId === order.id
         return (
           <div
             key={order.id}
             style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              gap: 12,
-              flexWrap: 'wrap',
               border: variant === 'footer' ? '1px solid rgba(255,255,255,.12)' : '1px solid #e5e7eb',
               borderRadius: 14,
               padding: 12,
               background: variant === 'footer' ? 'rgba(255,255,255,.04)' : '#fff',
             }}
           >
-            <div>
-              <strong>{getOrderNumber(order)}</strong>
-              <div style={{ color: variant === 'footer' ? 'rgba(255,255,255,.68)' : '#6b7280', marginTop: 4 }}>
-                {formatShortDate(order.created_at)} | {order.total_pieces || 0} piezas | {mxn(order.subtotal)}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div>
+                <strong>{getOrderNumber(order)}</strong>
+                <div style={{ color: variant === 'footer' ? 'rgba(255,255,255,.68)' : '#6b7280', marginTop: 4 }}>
+                  {formatShortDate(order.created_at)} | {order.total_pieces || 0} piezas | {mxn(order.subtotal)}
+                </div>
               </div>
+              <span style={{ borderRadius: 999, padding: '8px 12px', background: meta.bg, color: meta.color, fontWeight: 900 }}>
+                {meta.label}
+              </span>
             </div>
-            <span style={{ borderRadius: 999, padding: '8px 12px', background: meta.bg, color: meta.color, fontWeight: 900 }}>
-              {meta.label}
-            </span>
+            {canTakeNow ? (
+              <div style={{ marginTop: 12 }}>
+                <button
+                  type="button"
+                  style={styles.buttonSecondary}
+                  onClick={() => setExpandedOrderId(expanded ? null : order.id)}
+                >
+                  {expanded ? 'Ocultar piezas' : 'Seleccionar piezas para llevar ahora'}
+                </button>
+              </div>
+            ) : null}
+            {expanded ? (
+              <div style={{ display: 'grid', gap: 10, marginTop: 12 }}>
+                {items.map((item, idx) => {
+                  const max = getOrderItemQuantity(item)
+                  if (max <= 0) return null
+                  const key = `${order.id}-${idx}`
+                  return (
+                    <div key={key} style={{ display: 'grid', gridTemplateColumns: item.image ? '52px 1fr auto' : '1fr auto', gap: 10, alignItems: 'center', border: '1px solid #eef2f7', borderRadius: 14, padding: 10 }}>
+                      {item.image ? <img src={item.image} alt={item.name} loading="lazy" decoding="async" style={{ width: 52, height: 52, objectFit: 'cover', borderRadius: 10 }} /> : null}
+                      <div>
+                        <strong>{item.name}</strong>
+                        <div style={{ color: '#6b7280', marginTop: 3 }}>
+                          {item.package_mode ? `Paquete cerrado (${max} disp.)` : `Talla ${item.size || '-'} (${max} disp.)`}
+                        </div>
+                      </div>
+                      <input
+                        type="number"
+                        min="0"
+                        max={max}
+                        value={takeQuantities[key] || 0}
+                        onChange={(event) => setTakeQuantity(order, idx, event.target.value)}
+                        style={{ ...styles.input, width: 82, textAlign: 'center' }}
+                      />
+                    </div>
+                  )
+                })}
+                <button type="button" style={styles.buttonPrimary} onClick={() => requestImmediateDelivery(order)} disabled={immediateLoading}>
+                  {immediateLoading ? 'Generando...' : 'Validar entrega inmediata'}
+                </button>
+              </div>
+            ) : null}
           </div>
         )
       })}
@@ -5700,6 +5938,7 @@ function StoreView({
   const [featuredIndex, setFeaturedIndex] = useState(0)
   const [featuredPaused, setFeaturedPaused] = useState(false)
   const [lastUnitsSize, setLastUnitsSize] = useState('Todas')
+  const [lastUnitsLength, setLastUnitsLength] = useState('Todos')
   const [heroVideoReady, setHeroVideoReady] = useState(false)
   const featuredResumeRef = useRef(null)
   const featuredTouchRef = useRef(null)
@@ -5713,8 +5952,8 @@ function StoreView({
   const visibleFits = useMemo(() => {
     return uniqueValues(
       products
-        .filter((product) => product.active && productHasVisibleStock(product))
-        .filter((product) => storeAudience === 'Todo' || product.audience === storeAudience)
+        .filter(productHasVisibleStock)
+        .filter((product) => productMatchesStoreAudience(product, storeAudience))
         .filter((product) => storeCategory === 'Todos' || product.category === storeCategory)
         .filter((product) => storeBrand === 'Todas' || product.brand === storeBrand)
         .map((product) => product.subcategory)
@@ -5724,8 +5963,8 @@ function StoreView({
   const lastUnitsSizeOptions = useMemo(() => {
     return uniqueValues(
       products
-        .filter((product) => product.active && productHasVisibleStock(product))
-        .filter((product) => storeAudience === 'Todo' || product.audience === storeAudience)
+        .filter(productHasVisibleStock)
+        .filter((product) => productMatchesStoreAudience(product, storeAudience))
         .filter((product) => storeCategory === 'Todos' || product.category === storeCategory)
         .filter((product) => storeBrand === 'Todas' || product.brand === storeBrand)
         .filter(isLastUnitsProduct)
@@ -5736,7 +5975,18 @@ function StoreView({
         )
     )
   }, [products, storeAudience, storeCategory, storeBrand])
-  const activeProducts = useMemo(() => products.filter((p) => p.active), [products])
+  const lastUnitsLengthOptions = useMemo(() => {
+    return uniqueValues(
+      products
+        .filter(productHasVisibleStock)
+        .filter((product) => productMatchesStoreAudience(product, storeAudience))
+        .filter((product) => storeCategory === 'Todos' || product.category === storeCategory)
+        .filter((product) => storeBrand === 'Todas' || product.brand === storeBrand)
+        .filter(isLastUnitsProduct)
+        .flatMap((product) => String(product.lengths || '').split(/[,\s/]+/).map((length) => length.trim()).filter(Boolean))
+    )
+  }, [products, storeAudience, storeCategory, storeBrand])
+  const activeProducts = useMemo(() => products.filter(productHasVisibleStock), [products])
   const featuredProducts = useMemo(() => activeProducts.filter((p) => getCover(p)), [activeProducts])
   const heroProduct = useMemo(() => {
     return [...featuredProducts].sort((a, b) => Number(b.sales_count || 0) - Number(a.sales_count || 0) || new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0]
@@ -5833,9 +6083,9 @@ function StoreView({
   }
 
   const filteredProducts = useMemo(() => {
-    let list = [...products].filter((p) => p.active)
+    let list = [...products].filter(productHasVisibleStock)
 
-    if (storeAudience !== 'Todo') list = list.filter((p) => p.audience === storeAudience)
+    if (storeAudience !== 'Todo') list = list.filter((p) => productMatchesStoreAudience(p, storeAudience))
     if (storeCategory !== 'Todos') list = list.filter((p) => p.category === storeCategory)
     if (storeBrand !== 'Todas') list = list.filter((p) => p.brand === storeBrand)
     if (storeFit === LAST_UNITS_FILTER) {
@@ -5843,23 +6093,31 @@ function StoreView({
       if (lastUnitsSize !== 'Todas') {
         list = list.filter((p) => Number(p.stock?.[lastUnitsSize] || 0) > 0)
       }
+      if (lastUnitsLength !== 'Todos') {
+        list = list.filter((p) => String(p.lengths || '').split(/[,\s/]+/).map((length) => length.trim()).includes(lastUnitsLength))
+      }
     } else if (storeFit !== 'Todos') list = list.filter((p) => p.subcategory === storeFit)
 
     if (search.trim()) {
       const q = search.toLowerCase()
       list = list.filter((p) =>
-        `${p.name} ${p.category} ${p.subcategory} ${p.brand} ${p.audience}`.toLowerCase().includes(q)
+        `${p.name} ${p.model_po || ''} ${p.category} ${p.subcategory} ${p.brand} ${p.quality || ''} ${p.audience}`.toLowerCase().includes(q)
       )
     }
 
     list.sort((a, b) => {
-      const aPriority = (a.is_new ? 1000000 : 0) + Number(a.sales_count || 0) * 1000 + new Date(a.created_at || 0).getTime()
-      const bPriority = (b.is_new ? 1000000 : 0) + Number(b.sales_count || 0) * 1000 + new Date(b.created_at || 0).getTime()
+      const lastUnitsFilterActive = storeFit === LAST_UNITS_FILTER
+      const aLastUnits = !lastUnitsFilterActive && isLastUnitsProduct(a)
+      const bLastUnits = !lastUnitsFilterActive && isLastUnitsProduct(b)
+      if (aLastUnits !== bLastUnits) return aLastUnits ? 1 : -1
+
+      const aPriority = (a.is_offer ? 2000000 : 0) + (a.is_new ? 1000000 : 0) + Number(a.sales_count || 0) * 1000 + new Date(a.created_at || 0).getTime()
+      const bPriority = (b.is_offer ? 2000000 : 0) + (b.is_new ? 1000000 : 0) + Number(b.sales_count || 0) * 1000 + new Date(b.created_at || 0).getTime()
       return bPriority - aPriority
     })
 
     return list
-  }, [products, storeAudience, storeCategory, storeBrand, storeFit, lastUnitsSize, search])
+  }, [products, storeAudience, storeCategory, storeBrand, storeFit, lastUnitsSize, lastUnitsLength, search])
 
   useEffect(() => {
     setPage(1)
@@ -5874,12 +6132,16 @@ function StoreView({
   useEffect(() => {
     if (storeFit !== LAST_UNITS_FILTER) {
       if (lastUnitsSize !== 'Todas') setLastUnitsSize('Todas')
+      if (lastUnitsLength !== 'Todos') setLastUnitsLength('Todos')
       return
     }
     if (lastUnitsSize !== 'Todas' && !lastUnitsSizeOptions.includes(lastUnitsSize)) {
       setLastUnitsSize('Todas')
     }
-  }, [storeFit, lastUnitsSize, lastUnitsSizeOptions])
+    if (lastUnitsLength !== 'Todos' && !lastUnitsLengthOptions.includes(lastUnitsLength)) {
+      setLastUnitsLength('Todos')
+    }
+  }, [storeFit, lastUnitsSize, lastUnitsSizeOptions, lastUnitsLength, lastUnitsLengthOptions])
 
   const pageSize = isMobile ? PRODUCT_PAGE_SIZE_MOBILE : PRODUCT_PAGE_SIZE_DESKTOP
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize))
@@ -6467,7 +6729,7 @@ function StoreView({
           </div>
 
           {storeFit === LAST_UNITS_FILTER ? (
-            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : '260px', marginTop: 12 }}>
+            <div style={{ display: 'grid', gap: 8, gridTemplateColumns: isMobile ? '1fr' : '260px 220px', marginTop: 12 }}>
               <select
                 style={styles.input}
                 value={lastUnitsSize}
@@ -6477,6 +6739,17 @@ function StoreView({
                 <option value="Todas">Todas las tallas disponibles</option>
                 {lastUnitsSizeOptions.map((size) => (
                   <option key={size} value={size}>Talla {size}</option>
+                ))}
+              </select>
+              <select
+                style={styles.input}
+                value={lastUnitsLength}
+                onChange={(e) => setLastUnitsLength(e.target.value)}
+                aria-label="Filtrar ultimas piezas por largo"
+              >
+                <option value="Todos">Todos los largos</option>
+                {lastUnitsLengthOptions.map((length) => (
+                  <option key={length} value={length}>Largo {length}</option>
                 ))}
               </select>
             </div>
@@ -7233,16 +7506,7 @@ export default function App() {
   const [storeFit, setStoreFit] = useState('Todos')
 
   const [selectedConfig, setSelectedConfig] = useState({})
-  const [cart, setCart] = useState(() => {
-    if (typeof window === 'undefined') return []
-    try {
-      const saved = localStorage.getItem(CART_STORAGE_KEY)
-      const parsed = saved ? JSON.parse(saved) : []
-      return Array.isArray(parsed) ? parsed : []
-    } catch {
-      return []
-    }
-  })
+  const [cart, setCart] = useState([])
   const [customer, setCustomer] = useState(emptyCustomer)
 
   const [gallery, setGallery] = useState({
@@ -7397,12 +7661,9 @@ export default function App() {
   }, [specialPriceRules])
 
   useEffect(() => {
-    try {
-      localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart))
-    } catch {
-      // Ignore storage quota issues.
-    }
-  }, [cart])
+    if (!specialClientSession?.active) return
+    saveClientCart(specialClientSession, cart)
+  }, [cart, specialClientSession])
 
   useEffect(() => {
     const saved = localStorage.getItem(ADMIN_SESSION_KEY)
@@ -7413,7 +7674,9 @@ export default function App() {
       try {
         const parsed = JSON.parse(specialSaved)
         if (parsed && parsed.active !== false) {
-          setSpecialClientSession({ ...parsed, active: true })
+          const restoredClient = { ...parsed, active: true }
+          setSpecialClientSession(restoredClient)
+          setCart(readClientCart(restoredClient))
         }
       } catch {
         // Ignore invalid stored client sessions.
@@ -7558,13 +7821,16 @@ export default function App() {
 
     const client = { ...data[0], active: true }
     setSpecialClientSession(client)
+    setCart(readClientCart(client))
     localStorage.setItem(SPECIAL_CLIENT_SESSION_KEY, JSON.stringify(client))
     setSpecialCode('')
     return client
   }
 
   const logoutSpecialClient = () => {
+    if (specialClientSession?.active) saveClientCart(specialClientSession, cart)
     setSpecialClientSession(null)
+    setCart([])
     localStorage.removeItem(SPECIAL_CLIENT_SESSION_KEY)
   }
 
@@ -7593,7 +7859,7 @@ export default function App() {
       return
     }
 
-    if (customer.delivery === 'envios') {
+    if (!isRegisteredClient && customer.delivery === 'envios') {
       if (!customer.receiver.trim() || !customer.receiver_phone.trim() || !customer.address.trim()) {
         alert('Completa nombre, telefono y direccion de envio.')
         return
@@ -7602,8 +7868,12 @@ export default function App() {
 
     const orderNumber = generateOrderNumber()
     const subtotal = getCartSubtotal(cart, getCartUnitPrice)
-    const shippingLabel =
-      customer.delivery === 'envios'
+    const requestDelivery = isRegisteredClient ? 'registrado' : customer.delivery
+    const requestCity = isRegisteredClient ? '' : customer.city
+    const requestNotes = isRegisteredClient ? '' : customer.notes
+    const shippingLabel = isRegisteredClient
+      ? 'Cliente registrado / entrega por confirmar'
+      : customer.delivery === 'envios'
         ? 'Envio por paqueteria'
         : customer.delivery === 'punto'
           ? 'Entrega en punto medio'
@@ -7614,7 +7884,7 @@ export default function App() {
       : tier.label
 
     const shippingDetails =
-      customer.delivery === 'envios'
+      !isRegisteredClient && requestDelivery === 'envios'
         ? 'Recibe: ' + customer.receiver +
           ' | Tel: ' + customer.receiver_phone +
           ' | Direccion: ' + customer.address +
@@ -7637,17 +7907,20 @@ export default function App() {
 
     const noteParts = [
       'Numero pedido: ' + orderNumber,
-      customer.notes ? 'Observacion cliente: ' + customer.notes : '',
+      requestNotes ? 'Observacion cliente: ' + requestNotes : '',
       'Entrega: ' + shippingDetails,
       specialClientSession?.active
         ? 'Cliente especial: ' + specialClientSession.name + ' (' + specialClientSession.client_tier + ')'
+        : '',
+      specialClientSession?.active && specialClientSession.client_code
+        ? 'Codigo cliente: ' + specialClientSession.client_code
         : '',
     ].filter(Boolean)
 
     const orderPayload = {
       customer_name: requestCustomerName || '',
       customer_phone: phoneDigits,
-      customer_city: customer.city || '',
+      customer_city: requestCity || '',
       delivery: shippingLabel,
       notes: noteParts.join(' | '),
       items_json: itemRows,
@@ -7676,7 +7949,7 @@ export default function App() {
       .join('\n\n')
 
     const shippingText =
-      customer.delivery === 'envios'
+      !isRegisteredClient && requestDelivery === 'envios'
         ? '\nDATOS DE ENVIO\n' +
           'Recibe: ' + customer.receiver + '\n' +
           'Telefono: ' + customer.receiver_phone + '\n' +
@@ -7696,7 +7969,7 @@ export default function App() {
       'Numero de pedido: ' + orderNumber + '\n' +
       'Cliente: ' + requestCustomerName + '\n' +
       'Telefono: ' + (requestCustomerPhone || '-') + '\n' +
-      'Ciudad: ' + (customer.city || '-') + '\n' +
+      'Ciudad: ' + (requestCity || '-') + '\n' +
       'Tipo de entrega: ' + shippingLabel +
       shippingText +
       clientText +
@@ -7704,7 +7977,7 @@ export default function App() {
       itemsText +
       '\n\nTotal de piezas: ' + totalPieces + '\n' +
       'Monto total a pagar: ' + mxn(totalFinal) + '\n' +
-      'Observacion del cliente: ' + (customer.notes || '-') + '\n\n' +
+      'Observacion del cliente: ' + (requestNotes || '-') + '\n\n' +
       'Solicito apartado y confirmacion de existencia.'
 
     const link = 'https://wa.me/' + WHATSAPP_NUMBER + '?text=' + encodeURIComponent(msg)
