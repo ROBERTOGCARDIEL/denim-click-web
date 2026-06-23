@@ -322,6 +322,7 @@ const ADMIN_TABS = [
   { key: 'tarifas', label: 'Tarifas especiales' },
   { key: 'promociones', label: 'Promociones' },
   { key: 'pedidos', label: 'Pedidos' },
+  { key: 'rankingTallas', label: 'Ranking tallas' },
 ]
 
 
@@ -653,6 +654,106 @@ function summarizeOrderItems(items) {
   )
 }
 
+function getOrderItemProductId(item) {
+  return item?.product_id || item?.product?.id || item?.id || ''
+}
+
+function parsePackageSizeCounts(text, multiplier = 1) {
+  const counts = new Map()
+  String(text || '')
+    .replace(/[,\n;/]+/g, ' ')
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .forEach((token) => {
+      let size = ''
+      let qty = 1
+      const countFirst = token.match(/^(\d+)\s*[-xX]\s*([A-Za-z0-9]+)$/)
+      const sizeFirst = token.match(/^([A-Za-z0-9]+)\s*[-xX]\s*(\d+)$/)
+      if (countFirst) {
+        qty = Number(countFirst[1] || 1)
+        size = countFirst[2]
+      } else if (sizeFirst) {
+        size = sizeFirst[1]
+        qty = Number(sizeFirst[2] || 1)
+      } else if (!/^\d+$/.test(token)) {
+        size = token
+      }
+      if (!size) return
+      const cleanSize = size.toUpperCase()
+      counts.set(cleanSize, (counts.get(cleanSize) || 0) + qty * Math.max(1, Number(multiplier || 1)))
+    })
+  return counts
+}
+
+async function restoreOrderStock(order) {
+  const items = normalizeOrderItems(order?.items_json)
+  const productIds = uniqueValues(items.map(getOrderItemProductId).filter(Boolean).map(String))
+  if (!productIds.length) return
+
+  const { data, error } = await supabase
+    .from('products')
+    .select(PRODUCT_LIST_COLUMNS)
+    .in('id', productIds)
+
+  if (error) throw error
+
+  const latestProducts = new Map((data || []).map((row) => {
+    const product = normalizeProduct(row)
+    return [String(product.id), product]
+  }))
+  const updates = new Map()
+
+  items.forEach((item) => {
+    const productId = String(getOrderItemProductId(item))
+    const product = latestProducts.get(productId)
+    if (!product) return
+    const entry = updates.get(productId) || {
+      product,
+      stock: { ...product.stock },
+      package_stock: Number(product.package_stock || 0),
+      sales_count: Number(product.sales_count || 0),
+    }
+    const quantity = Number(item.quantity || 0)
+    if (quantity <= 0) return
+
+    if (item.package_mode || item.packageMode) {
+      entry.package_stock += quantity
+      entry.sales_count = Math.max(0, entry.sales_count - Number(item.pieces || getPackagePieces(product) * quantity || 0))
+    } else {
+      const size = String(item.size || '').trim()
+      if (size) entry.stock[size] = Number(entry.stock?.[size] || 0) + quantity
+      entry.sales_count = Math.max(0, entry.sales_count - quantity)
+    }
+    updates.set(productId, entry)
+  })
+
+  const results = await Promise.all(
+    [...updates.values()].map((entry) => {
+      const nextProduct = {
+        ...entry.product,
+        stock: entry.stock,
+        package_stock: entry.package_stock,
+        sales_count: entry.sales_count,
+      }
+      const hasAnyStock = totalStock(entry.stock) > 0 || entry.package_stock > 0
+      return supabase
+        .from('products')
+        .update({
+          stock_json: entry.stock,
+          stock: totalStock(entry.stock),
+          sales_count: entry.sales_count,
+          active: hasAnyStock,
+          description: composeProductDescription(nextProduct),
+        })
+        .eq('id', entry.product.id)
+    })
+  )
+
+  const restoreError = results.find((result) => result.error)?.error
+  if (restoreError) throw restoreError
+}
+
 function formatShortDate(value) {
   if (!value) return '-'
   try {
@@ -700,7 +801,7 @@ function isLastUnitsProduct(product) {
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
   if (loosePieces <= 0) return false
-  return loosePieces < 5 || stockEntries.length === 1
+  return loosePieces < 5 || stockEntries.length < 4
 }
 
 function generateOrderNumber() {
@@ -2535,6 +2636,8 @@ function ProductCard({
   const current = selectedConfig[product.id] || { size: '', quantity: 0 }
   const [pickerMode, setPickerMode] = useState('sizes')
   const [packageQty, setPackageQty] = useState(1)
+  const [packageBreakdown, setPackageBreakdown] = useState(product.package_breakdown || product.package_fit || '')
+  const [packageReady, setPackageReady] = useState(true)
   const activeSize = current.size
   const stockForSelected = Number(product.stock?.[activeSize] || 0)
   const availableStock = totalStock(product.stock)
@@ -2552,14 +2655,23 @@ function ProductCard({
     if (pickerMode === 'package' && !hasPackageStock && hasSizeStock) setPickerMode('sizes')
   }, [pickerMode, hasSizeStock, hasPackageStock])
 
+  useEffect(() => {
+    setPackageQty(1)
+    setPackageBreakdown(product.package_breakdown || product.package_fit || '')
+    setPackageReady(true)
+  }, [product.id, product.package_breakdown, product.package_fit])
+
   const setPackageQuantity = (qty) => {
     const clean = Math.max(1, Math.min(Number(qty || 1), Math.max(1, packageStock)))
     setPackageQty(clean)
+    setPackageReady(true)
   }
 
   const addPackage = () => {
     if (!onAddPackageToCart) return false
-    return onAddPackageToCart(product, packageQty)
+    const added = onAddPackageToCart(product, packageQty, packageBreakdown)
+    if (added !== false) setPackageReady(false)
+    return added
   }
 
   const setSize = (size) => {
@@ -2701,13 +2813,22 @@ function ProductCard({
                   <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 900 }}>Precio c/u</span>
                   <strong style={{ fontSize: 12 }}>{mxn(packageUnitPrice)}</strong>
                 </div>
+                <input
+                  value={packageBreakdown}
+                  onChange={(event) => {
+                    setPackageBreakdown(event.target.value)
+                    setPackageReady(true)
+                  }}
+                  placeholder="Tallas del paquete (opcional)"
+                  style={{ ...styles.input, minHeight: 38, padding: '8px 10px', fontSize: 12 }}
+                />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
                     <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}><Minus size={14} /></button>
                     <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ width: 42, height: 32, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900 }} />
                     <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}><Plus size={14} /></button>
                   </div>
-                  <button type="button" onClick={addPackage} disabled={packageStock <= 0} style={{ ...styles.buttonPrimary, minHeight: 36, borderRadius: 999, padding: '8px 12px', fontSize: 12, opacity: packageStock <= 0 ? 0.5 : 1 }}>
+                  <button type="button" onClick={addPackage} disabled={packageStock <= 0 || !packageReady} style={{ ...styles.buttonPrimary, minHeight: 36, borderRadius: 999, padding: '8px 12px', fontSize: 12, opacity: packageStock <= 0 || !packageReady ? 0.5 : 1 }}>
                     Agregar paquete
                   </button>
                 </div>
@@ -2821,11 +2942,20 @@ function ProductCard({
                   <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Precio c/u</small><div style={{ fontWeight: 900 }}>{mxn(packageUnitPrice)}</div></div>
                   <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Paquetes</small><div style={{ fontWeight: 900 }}>{packageStock}</div></div>
                 </div>
+                <input
+                  value={packageBreakdown}
+                  onChange={(event) => {
+                    setPackageBreakdown(event.target.value)
+                    setPackageReady(true)
+                  }}
+                  placeholder="Tallas del paquete (opcional)"
+                  style={{ ...styles.input, padding: '10px 12px' }}
+                />
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}><Minus size={14} /></button>
                   <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ ...styles.input, width: 86, textAlign: 'center', padding: '12px 14px' }} />
                   <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}><Plus size={14} /></button>
-                  <button type="button" onClick={addPackage} disabled={packageStock <= 0} style={{ ...styles.buttonPrimary, flex: 1, opacity: packageStock <= 0 ? 0.5 : 1 }}>Agregar paquete</button>
+                  <button type="button" onClick={addPackage} disabled={packageStock <= 0 || !packageReady} style={{ ...styles.buttonPrimary, flex: 1, opacity: packageStock <= 0 || !packageReady ? 0.5 : 1 }}>Agregar paquete</button>
                 </div>
               </div>
             ) : hasSizeStock ? (
@@ -2970,6 +3100,8 @@ function ProductQuickView({
 }) {
   const [imageIndex, setImageIndex] = useState(0)
   const [packageQty, setPackageQty] = useState(1)
+  const [packageBreakdown, setPackageBreakdown] = useState(product?.package_breakdown || product?.package_fit || '')
+  const [packageReady, setPackageReady] = useState(true)
   const touchStartX = useRef(0)
   const detailPanelRef = useRef(null)
   const autoScrollRef = useRef(null)
@@ -2992,6 +3124,8 @@ function ProductQuickView({
     if (!open || !product) return
     setImageIndex(0)
     setPackageQty(1)
+    setPackageBreakdown(product.package_breakdown || product.package_fit || '')
+    setPackageReady(true)
     setDetailMode(totalStock(product.stock) > 0 ? 'sizes' : Number(product.package_stock || 0) > 0 ? 'package' : 'sizes')
     const firstAvailable = (product.sizes || []).find((size) => Number(product.stock?.[size] || 0) > 0)
     const existing = selectedConfig[product.id]
@@ -3050,11 +3184,15 @@ function ProductQuickView({
   const setPackageQuantity = (qty) => {
     const clean = Math.max(1, Math.min(Number(qty || 1), Math.max(1, packageStock)))
     setPackageQty(clean)
+    setPackageReady(true)
   }
 
   const addPackageAndClose = () => {
-    const added = onAddPackageToCart(product, packageQty)
-    if (added !== false) onClose()
+    const added = onAddPackageToCart(product, packageQty, packageBreakdown)
+    if (added !== false) {
+      setPackageReady(false)
+      onClose()
+    }
   }
 
   const stopAutoScroll = () => {
@@ -3327,6 +3465,15 @@ function ProductQuickView({
                 Corrida: {product.package_breakdown}
               </p>
             ) : null}
+            <input
+              value={packageBreakdown}
+              onChange={(event) => {
+                setPackageBreakdown(event.target.value)
+                setPackageReady(true)
+              }}
+              placeholder="Tallas del paquete (opcional)"
+              style={{ ...styles.input, marginTop: 12 }}
+            />
             {packageStock > 0 ? (
               <div style={{ marginTop: 12, display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
@@ -3338,7 +3485,18 @@ function ProductQuickView({
                     <Plus size={15} />
                   </button>
                 </div>
-                <button type="button" style={{ ...styles.buttonSecondary, background: '#111315', color: '#fff' }} onClick={addPackageAndClose}>
+                <button
+                  type="button"
+                  disabled={!packageReady}
+                  style={{
+                    ...styles.buttonSecondary,
+                    background: '#111315',
+                    color: '#fff',
+                    opacity: packageReady ? 1 : .52,
+                    cursor: packageReady ? 'pointer' : 'not-allowed',
+                  }}
+                  onClick={addPackageAndClose}
+                >
                   Agregar paquete cerrado
                 </button>
               </div>
@@ -3616,8 +3774,10 @@ function CartDrawer({
                                 ? 'Paquete cerrado: ' + item.quantity + ' paquete(s) x ' + getPackagePieces(item.product) + ' pz'
                                 : 'Talla ' + item.size}
                             </p>
-                            {item.packageMode && item.product.package_breakdown ? (
-                              <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>Corrida: {item.product.package_breakdown}</p>
+                            {item.packageMode && (item.packageBreakdown || item.product.package_breakdown || item.product.package_fit) ? (
+                              <p style={{ margin: '4px 0 0', color: '#6b7280', fontSize: 13 }}>
+                                Corrida: {item.packageBreakdown || item.product.package_breakdown || item.product.package_fit}
+                              </p>
                             ) : null}
                           </div>
                           <strong>{mxn(lineTotal)}</strong>
@@ -4979,6 +5139,101 @@ function SpecialClientsAdmin({ specialClients, fetchSpecialClients }) {
   )
 }
 
+function SizeRankingAdmin({ orders, products }) {
+  const isMobile = useIsMobile()
+  const productMap = useMemo(
+    () => new Map((products || []).map((product) => [String(product.id), product])),
+    [products]
+  )
+
+  const rankings = useMemo(() => {
+    const byQuality = new Map()
+
+    ;(orders || []).forEach((order) => {
+      if (order.status === 'cancelado') return
+
+      normalizeOrderItems(order.items_json).forEach((item) => {
+        const product = productMap.get(String(getOrderItemProductId(item)))
+        const quality = String(item.quality || product?.quality || 'Sin calidad').trim() || 'Sin calidad'
+        if (!byQuality.has(quality)) byQuality.set(quality, new Map())
+        const sizeMap = byQuality.get(quality)
+
+        if (item.package_mode || item.packageMode) {
+          const counts = parsePackageSizeCounts(
+            item.package_breakdown || item.packageBreakdown || product?.package_breakdown || product?.package_fit || '',
+            Number(item.quantity || 1)
+          )
+
+          if (counts.size) {
+            counts.forEach((qty, size) => {
+              sizeMap.set(size, (sizeMap.get(size) || 0) + Number(qty || 0))
+            })
+          } else {
+            sizeMap.set(
+              'Paquete cerrado',
+              (sizeMap.get('Paquete cerrado') || 0) + Number(item.pieces || item.package_pieces || item.quantity || 0)
+            )
+          }
+          return
+        }
+
+        const size = String(item.size || 'Sin talla').trim() || 'Sin talla'
+        const pieces = Number(item.quantity || item.pieces || 0)
+        sizeMap.set(size, (sizeMap.get(size) || 0) + pieces)
+      })
+    })
+
+    return [...byQuality.entries()]
+      .map(([quality, sizeMap]) => {
+        const sizes = [...sizeMap.entries()]
+          .map(([size, pieces]) => ({ size, pieces }))
+          .sort((a, b) => b.pieces - a.pieces)
+        return {
+          quality,
+          total: sizes.reduce((sum, item) => sum + Number(item.pieces || 0), 0),
+          sizes,
+        }
+      })
+      .filter((group) => group.total > 0)
+      .sort((a, b) => b.total - a.total)
+  }, [orders, productMap])
+
+  return (
+    <div style={{ ...styles.card, padding: 24 }}>
+      <h3 style={{ margin: 0, fontSize: 28 }}>Ranking de tallas por calidad</h3>
+      <p style={{ margin: '6px 0 0', color: '#6b7280' }}>
+        Calculado con pedidos activos, confirmados, entregados y solicitudes inmediatas. Los cancelados no cuentan.
+      </p>
+
+      {rankings.length ? (
+        <div style={{ display: 'grid', gap: 14, gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))', marginTop: 18 }}>
+          {rankings.map((group) => (
+            <div key={group.quality} style={{ border: '1px solid #e5e7eb', borderRadius: 18, padding: 18, background: '#fff' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+                <h4 style={{ margin: 0, fontSize: 22 }}>{group.quality}</h4>
+                <Badge bg="#ecfdf5" color="#047857">{group.total} pz</Badge>
+              </div>
+              <div style={{ display: 'grid', gap: 8, marginTop: 14 }}>
+                {group.sizes.slice(0, 10).map((item, index) => (
+                  <div key={item.size} style={{ display: 'grid', gridTemplateColumns: '42px 1fr auto', gap: 10, alignItems: 'center' }}>
+                    <strong>{index + 1}.</strong>
+                    <span style={{ fontWeight: 900 }}>{item.size}</span>
+                    <span style={{ color: '#6b7280', fontWeight: 900 }}>{item.pieces} pz</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{ marginTop: 18, border: '1px dashed #d1d5db', borderRadius: 18, padding: 22, color: '#6b7280' }}>
+          Todavia no hay pedidos suficientes para generar ranking.
+        </div>
+      )}
+    </div>
+  )
+}
+
 function OrdersAdmin({ orders, fetchOrders }) {
   const isMobile = useIsMobile()
   const [orderSearch, setOrderSearch] = useState('')
@@ -4994,15 +5249,20 @@ function OrdersAdmin({ orders, fetchOrders }) {
     }
 
     setSavingId(order.id)
-    const { error } = await supabase.from('orders').update(payload).eq('id', order.id)
-    setSavingId(null)
+    try {
+      if (status === 'cancelado' && order.status !== 'cancelado') {
+        await restoreOrderStock(order)
+      }
 
-    if (error) {
-      alert('No se pudo actualizar pedido: ' + error.message)
-      return
+      const { error } = await supabase.from('orders').update(payload).eq('id', order.id)
+      if (error) throw error
+
+      await fetchOrders()
+    } catch (error) {
+      alert('No se pudo actualizar pedido: ' + (error.message || error))
+    } finally {
+      setSavingId(null)
     }
-
-    await fetchOrders()
   }
 
   const dashboard = useMemo(() => {
@@ -5284,11 +5544,6 @@ function TopHelpMenu({ isMobile, open, setOpen, onOpenMenu, onOrderStatus, onImp
       label: 'Estatus del pedido',
       text: 'Consulta el avance de tus apartados.',
       action: onOrderStatus,
-    },
-    {
-      label: 'Mejora tu precio',
-      text: 'Activa tu codigo de cliente especial.',
-      action: onImprovePrice,
     },
     {
       label: 'Ayuda',
@@ -7083,7 +7338,7 @@ function AdminView({
     const clean = prepareDraftForSave(newProductDraft)
     const imageOptimizedProduct = { ...clean, images: await compressProductImages(clean.images) }
     const payload = productToDb(imageOptimizedProduct)
-    const { data, error } = await supabase.from('products').insert([payload]).select(PRODUCT_LIST_COLUMNS).single()
+    const { data, error } = await supabase.from('products').insert([payload]).select('id,created_at').single()
     setLoading(false)
 
     if (error) {
@@ -7091,14 +7346,16 @@ function AdminView({
       return
     }
 
-    const inserted = data
+    const inserted = { ...payload, ...data }
     if (inserted?.id) {
       setProducts((prev) => [normalizeProduct(inserted), ...prev.filter((product) => String(product.id) !== String(inserted.id))])
       const defaultTierPrices = getDefaultTierPricesForProduct(clean, specialPriceRules)
-      await Promise.all(
-        CLIENT_TIERS.map((tier) =>
-          supabase.from('product_customer_prices').insert([{ product_id: inserted.id, client_tier: tier, price: Number(defaultTierPrices[tier] || 0) }])
-        )
+      await supabase.from('product_customer_prices').insert(
+        CLIENT_TIERS.map((tier) => ({
+          product_id: inserted.id,
+          client_tier: tier,
+          price: Number(defaultTierPrices[tier] || 0),
+        }))
       )
       await fetchTierPrices()
     }
@@ -7128,12 +7385,10 @@ function AdminView({
     const includeImages = !originalProduct || !imagesAreEqual(originalProduct.images || [], clean.images || [])
     const imageOptimizedProduct = includeImages ? { ...clean, images: await compressProductImages(clean.images) } : clean
     const payload = productToDb(imageOptimizedProduct, { includeImages })
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from('products')
       .update(payload)
       .eq('id', editingId)
-      .select(PRODUCT_LIST_COLUMNS)
-      .single()
     setLoading(false)
 
     if (error) {
@@ -7141,7 +7396,12 @@ function AdminView({
       return
     }
 
-    const nextProduct = normalizeProduct(data)
+    const nextProduct = normalizeProduct({
+      ...(originalProduct ? productToDb(originalProduct) : {}),
+      ...payload,
+      id: editingId,
+      created_at: originalProduct?.created_at,
+    })
     setProducts((prev) =>
       prev.map((product) =>
         String(product.id) === String(editingId)
@@ -7381,6 +7641,10 @@ function AdminView({
 
           {activeTab === 'pedidos' ? (
             <OrdersAdmin orders={orders} fetchOrders={fetchOrders} />
+          ) : null}
+
+          {activeTab === 'rankingTallas' ? (
+            <SizeRankingAdmin orders={orders} products={products} />
           ) : null}
         </div>
       </div>
@@ -7721,34 +7985,51 @@ export default function App() {
 
   const addToCart = (product) => {
     const selection = selectedConfig[product.id]
-    if (!selection?.size || Number(selection.quantity || 0) <= 0) return false
+    const size = selection?.size
+    const quantity = Number(selection?.quantity || 0)
+    if (!size || quantity <= 0) return false
 
-    const stock = Number(product.stock?.[selection.size] || 0)
-    if (Number(selection.quantity || 0) > stock) {
+    const stock = Number(product.stock?.[size] || 0)
+    if (quantity > stock) {
       alert('La cantidad supera el stock disponible.')
       return false
     }
 
     setCart((prev) => {
       const index = prev.findIndex(
-        (item) => !item.packageMode && item.product.id === product.id && item.size === selection.size
+        (item) => !item.packageMode && item.product.id === product.id && item.size === size
       )
 
       if (index >= 0) {
         const next = [...prev]
         const currentQty = Number(next[index].quantity || 0)
-        const newQty = Math.min(stock, currentQty + Number(selection.quantity || 0))
+        const newQty = Math.min(stock, currentQty + quantity)
         next[index] = { ...next[index], product, quantity: newQty }
         return next
       }
 
-      return [...prev, { product, size: selection.size, quantity: Number(selection.quantity || 0), packageMode: false }]
+      return [...prev, { product, size, quantity, packageMode: false }]
     })
+
+    setProducts((prevProducts) =>
+      prevProducts.map((currentProduct) => {
+        if (String(currentProduct.id) !== String(product.id)) return currentProduct
+        const nextStock = { ...(currentProduct.stock || {}) }
+        nextStock[size] = Math.max(0, Number(nextStock[size] || 0) - quantity)
+        const nextStockTotal = totalStock(nextStock)
+        return {
+          ...currentProduct,
+          stock: nextStock,
+          stock_total: nextStockTotal,
+          active: nextStockTotal > 0 || Number(currentProduct.package_stock || 0) > 0,
+        }
+      })
+    )
 
     setSelectedConfig((prev) => ({
       ...prev,
       [product.id]: {
-        size: selection.size,
+        size: '',
         quantity: 0,
       },
     }))
@@ -7756,9 +8037,11 @@ export default function App() {
     return true
   }
 
-  const addPackageToCart = (product, quantity = 1) => {
+  const addPackageToCart = (product, quantity = 1, packageBreakdown = '') => {
     const packageStock = Number(product.package_stock || 0)
     const cleanQty = Math.max(1, Math.min(Number(quantity || 1), packageStock))
+    const packagePieces = getPackagePieces(product)
+    const cleanBreakdown = String(packageBreakdown || product.package_breakdown || product.package_fit || '').trim()
 
     if (packageStock <= 0) {
       alert('Este producto no tiene paquetes cerrados disponibles.')
@@ -7766,7 +8049,12 @@ export default function App() {
     }
 
     setCart((prev) => {
-      const index = prev.findIndex((item) => item.packageMode && item.product.id === product.id)
+      const index = prev.findIndex(
+        (item) =>
+          item.packageMode &&
+          item.product.id === product.id &&
+          String(item.packageBreakdown || '') === cleanBreakdown
+      )
 
       if (index >= 0) {
         const next = [...prev]
@@ -7775,7 +8063,8 @@ export default function App() {
           ...next[index],
           product,
           quantity: Math.min(packageStock, currentQty + cleanQty),
-          packagePieces: getPackagePieces(product),
+          packagePieces,
+          packageBreakdown: cleanBreakdown,
         }
         return next
       }
@@ -7787,10 +8076,24 @@ export default function App() {
           size: 'Paquete cerrado',
           quantity: cleanQty,
           packageMode: true,
-          packagePieces: getPackagePieces(product),
+          packagePieces,
+          packageBreakdown: cleanBreakdown,
         },
       ]
     })
+
+    setProducts((prevProducts) =>
+      prevProducts.map((currentProduct) => {
+        if (String(currentProduct.id) !== String(product.id)) return currentProduct
+        const nextPackageStock = Math.max(0, Number(currentProduct.package_stock || 0) - cleanQty)
+        const looseStock = totalStock(currentProduct.stock)
+        return {
+          ...currentProduct,
+          package_stock: nextPackageStock,
+          active: looseStock > 0 || nextPackageStock > 0,
+        }
+      })
+    )
 
     return true
   }
@@ -7901,7 +8204,9 @@ export default function App() {
       pieces: getCartItemPieces(item),
       unit_price: getCartItemUnitPrice(item, getCartUnitPrice),
       total: getCartLineTotal(item, getCartUnitPrice),
-      package_breakdown: item.packageMode ? item.product.package_breakdown || item.product.package_fit || '' : '',
+      package_breakdown: item.packageMode ? item.packageBreakdown || item.product.package_breakdown || item.product.package_fit || '' : '',
+      quality: item.product.quality || '',
+      model_po: item.product.model_po || '',
       image: getCover(item.product),
     }))
 
@@ -8045,10 +8350,12 @@ export default function App() {
             package_stock: entry.package_stock,
             sales_count: entry.sales_count,
           }
+          const hasAnyStock = totalStock(entry.stock) > 0 || Number(entry.package_stock || 0) > 0
           const payload = {
             stock_json: entry.stock,
             stock: totalStock(entry.stock),
             sales_count: entry.sales_count,
+            active: hasAnyStock,
             description: composeProductDescription(nextProduct),
           }
           return supabase.from('products').update(payload).eq('id', entry.product.id)
@@ -8067,6 +8374,7 @@ export default function App() {
             stock_total: totalStock(entry.stock),
             package_stock: entry.package_stock,
             sales_count: entry.sales_count,
+            active: totalStock(entry.stock) > 0 || Number(entry.package_stock || 0) > 0,
           },
         ])
       )
@@ -8075,6 +8383,7 @@ export default function App() {
         prevProducts.map((product) => updatedProducts.get(String(product.id)) || product)
       )
       setCart([])
+      if (specialClientSession?.active) saveClientCart(specialClientSession, [])
       setCustomer(emptyCustomer)
 
       let opened = null
@@ -8095,6 +8404,7 @@ export default function App() {
     } catch (error) {
       console.error('No se pudo solicitar el apartado:', error)
       alert('No se pudo solicitar el apartado: ' + (error.message || 'Revisa el stock e intenta de nuevo.'))
+      fetchProducts().catch((refreshError) => console.error('No se pudieron recuperar productos despues del error:', refreshError))
     } finally {
       setLoading(false)
     }
