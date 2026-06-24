@@ -869,7 +869,6 @@ function getProductBasePrice(product) {
 
 function isLastUnitsProduct(product) {
   if (Number(product?.package_stock || 0) > 0) return false
-  if (product?.is_new) return false
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
   if (loosePieces <= 0) return false
