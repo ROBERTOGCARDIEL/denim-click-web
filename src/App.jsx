@@ -699,10 +699,23 @@ function countsTotal(counts) {
   return entries.reduce((sum, qty) => sum + Number(qty || 0), 0)
 }
 
+function filterCountsToProductSizes(counts, product) {
+  const allowedSizes = new Set((product?.sizes || []).map((size) => String(size).toUpperCase()))
+  if (!allowedSizes.size) return counts
+  const filtered = new Map()
+  counts.forEach((qty, size) => {
+    const cleanSize = String(size || '').toUpperCase()
+    if (allowedSizes.has(cleanSize) && Number(qty || 0) > 0) filtered.set(cleanSize, Number(qty || 0))
+  })
+  return filtered
+}
+
 function buildPackageSelectionStock(product, packageQty = 1) {
-  const baseText = product?.package_breakdown || product?.package_fit || ''
-  const counts = parsePackageSizeCounts(baseText, packageQty)
-  if (counts.size > 0) return counts
+  const sources = [product?.package_breakdown, product?.package_fit].filter(Boolean)
+  for (const source of sources) {
+    const counts = filterCountsToProductSizes(parsePackageSizeCounts(source, packageQty), product)
+    if (counts.size > 0) return counts
+  }
   return new Map((product?.sizes || []).map((size) => [String(size).toUpperCase(), 0]))
 }
 
@@ -826,6 +839,7 @@ function getProductBasePrice(product) {
 }
 
 function isLastUnitsProduct(product) {
+  if (Number(product?.package_stock || 0) > 0) return false
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
   if (loosePieces <= 0) return false
@@ -8382,7 +8396,8 @@ export default function App() {
         const nextStock = { ...(currentProduct.stock || {}) }
         if (isPartialPackage) {
           const selectedMap = new Map(selectionEntries)
-          packageCounts.forEach((qty, size) => {
+          const currentPackageCounts = buildPackageSelectionStock(currentProduct, cleanQty)
+          currentPackageCounts.forEach((qty, size) => {
             const remaining = Math.max(0, Number(qty || 0) - Number(selectedMap.get(size) || 0))
             if (remaining > 0) nextStock[size] = Number(nextStock[size] || 0) + remaining
           })
