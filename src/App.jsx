@@ -872,7 +872,7 @@ function isLastUnitsProduct(product) {
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
   if (loosePieces <= 0) return false
-  return loosePieces < 5 || stockEntries.length < 4
+  return loosePieces < 5 && stockEntries.length < 4
 }
 
 function generateOrderNumber() {
