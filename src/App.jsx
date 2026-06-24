@@ -686,6 +686,16 @@ function parsePackageSizeCounts(text, multiplier = 1) {
   return counts
 }
 
+function normalizePackageSizeLabel(value) {
+  const raw = String(value || '').trim().toUpperCase()
+  if (!raw) return ''
+  const countFirst = raw.match(/^\d+\s*[-xX]\s*([A-Z0-9]+)$/)
+  if (countFirst) return countFirst[1]
+  const sizeFirst = raw.match(/^([A-Z0-9]+)\s*[-xX]\s*\d+$/)
+  if (sizeFirst) return sizeFirst[1]
+  return raw
+}
+
 function packageCountsToText(counts) {
   const entries = counts instanceof Map ? [...counts.entries()] : Object.entries(counts || {})
   return entries
@@ -700,11 +710,11 @@ function countsTotal(counts) {
 }
 
 function filterCountsToProductSizes(counts, product) {
-  const allowedSizes = new Set((product?.sizes || []).map((size) => String(size).toUpperCase()))
+  const allowedSizes = new Set((product?.sizes || []).map(normalizePackageSizeLabel).filter(Boolean))
   if (!allowedSizes.size) return counts
   const filtered = new Map()
   counts.forEach((qty, size) => {
-    const cleanSize = String(size || '').toUpperCase()
+    const cleanSize = normalizePackageSizeLabel(size)
     if (allowedSizes.has(cleanSize) && Number(qty || 0) > 0) filtered.set(cleanSize, Number(qty || 0))
   })
   return filtered
@@ -716,7 +726,25 @@ function buildPackageSelectionStock(product, packageQty = 1) {
     const counts = filterCountsToProductSizes(parsePackageSizeCounts(source, packageQty), product)
     if (counts.size > 0) return counts
   }
-  return new Map((product?.sizes || []).map((size) => [String(size).toUpperCase(), 0]))
+  return new Map((product?.sizes || []).map((size) => [normalizePackageSizeLabel(size), 0]).filter(([size]) => Boolean(size)))
+}
+
+function mergeProductSizes(product, stock = product?.stock || {}) {
+  const sizes = new Set((product?.sizes || []).map(normalizePackageSizeLabel).filter(Boolean))
+  Object.entries(stock || {}).forEach(([size, qty]) => {
+    const cleanSize = normalizePackageSizeLabel(size)
+    if (cleanSize && Number(qty || 0) > 0) sizes.add(cleanSize)
+  })
+  return [...sizes]
+}
+
+function normalizeStockBySize(stock = {}) {
+  return Object.entries(stock || {}).reduce((next, [size, qty]) => {
+    const cleanSize = normalizePackageSizeLabel(size)
+    if (!cleanSize) return next
+    next[cleanSize] = Number(next[cleanSize] || 0) + Number(qty || 0)
+    return next
+  }, {})
 }
 
 async function restoreOrderStock(order) {
@@ -781,6 +809,7 @@ async function restoreOrderStock(order) {
       return supabase
         .from('products')
         .update({
+          sizes: mergeProductSizes(entry.product, entry.stock).join(','),
           stock_json: entry.stock,
           stock: totalStock(entry.stock),
           sales_count: entry.sales_count,
@@ -1026,15 +1055,20 @@ function normalizeProduct(row) {
     images = [row.images]
   }
 
-  const sizes =
+  const rawSizes =
     typeof row.sizes === 'string' && row.sizes.trim()
       ? row.sizes.split(',').map((s) => s.trim()).filter(Boolean)
       : ['CH', 'M', 'G']
 
-  const stock =
+  const rawStock =
     row.stock_json && typeof row.stock_json === 'object' && !Array.isArray(row.stock_json)
       ? row.stock_json
-      : Object.fromEntries(sizes.map((s) => [s, 0]))
+      : Object.fromEntries(rawSizes.map((s) => [s, 0]))
+  const stock = normalizeStockBySize(rawStock)
+  const sizes = uniqueValues([
+    ...rawSizes.map(normalizePackageSizeLabel).filter(Boolean),
+    ...Object.keys(stock),
+  ])
 
   const parsedDescription = splitProductDescription(row.description || '')
   const productMeta = parsedDescription.meta || {}
@@ -8405,6 +8439,7 @@ export default function App() {
         const looseStock = totalStock(nextStock)
         return {
           ...currentProduct,
+          sizes: mergeProductSizes(currentProduct, nextStock),
           stock: nextStock,
           stock_total: looseStock,
           package_stock: nextPackageStock,
@@ -8802,6 +8837,7 @@ export default function App() {
           }
           const hasAnyStock = totalStock(entry.stock) > 0 || Number(entry.package_stock || 0) > 0
           const payload = {
+            sizes: mergeProductSizes(entry.product, entry.stock).join(','),
             stock_json: entry.stock,
             stock: totalStock(entry.stock),
             sales_count: entry.sales_count,
