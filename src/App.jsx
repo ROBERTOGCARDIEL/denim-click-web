@@ -869,6 +869,7 @@ function getProductBasePrice(product) {
 
 function isLastUnitsProduct(product) {
   if (Number(product?.package_stock || 0) > 0) return false
+  if (product?.is_new) return false
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
   if (loosePieces <= 0) return false
@@ -2830,6 +2831,7 @@ function ProductCard({
         boxShadow: isMobile ? 'none' : styles.card.boxShadow,
         border: isMobile ? 'none' : styles.card.border,
         background: '#fff',
+        minWidth: 0,
         transition: 'transform 0.25s ease, box-shadow 0.25s ease',
       }}
       onMouseEnter={(event) => {
@@ -2928,14 +2930,14 @@ function ProductCard({
         {isMobile ? (
           <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
             {pickerMode === 'package' && hasPackageStock ? (
-              <div style={{ border: '1px solid #e5dfd4', borderRadius: 12, padding: 10, background: '#fbfaf7', display: 'grid', gap: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 900 }}>Entallado</span>
-                  <strong style={{ fontSize: 12 }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</strong>
+              <div style={{ border: '1px solid #e5dfd4', borderRadius: 12, padding: 9, background: '#fbfaf7', display: 'grid', gap: 8, minWidth: 0 }}>
+                <div style={{ display: 'grid', gap: 2 }}>
+                  <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 900 }}>Entallado</span>
+                  <strong style={{ fontSize: 12, lineHeight: 1.15, overflowWrap: 'anywhere' }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</strong>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                  <span style={{ fontSize: 11, color: '#6b7280', fontWeight: 900 }}>Precio c/u</span>
-                  <strong style={{ fontSize: 12 }}>{mxn(packageUnitPrice)}</strong>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                  <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 900 }}>Precio c/u</span>
+                  <strong style={{ fontSize: 13 }}>{mxn(packageUnitPrice)}</strong>
                 </div>
                 <button
                   type="button"
@@ -2946,10 +2948,10 @@ function ProductCard({
                   }}
                   style={{
                     ...styles.buttonSecondary,
-                    minHeight: 36,
+                    minHeight: 34,
                     borderRadius: 999,
-                    padding: '8px 12px',
-                    fontSize: 12,
+                    padding: '7px 10px',
+                    fontSize: 11,
                     background: selectPackageSizes ? '#111315' : '#fff',
                     color: selectPackageSizes ? '#fff' : '#111315',
                   }}
@@ -2959,17 +2961,23 @@ function ProductCard({
                 {selectPackageSizes ? (
                   <div style={{ display: 'grid', gap: 8 }}>
                     {packageSizeOptions.map(({ size, max }) => (
-                      <div key={size} style={{ display: 'grid', gridTemplateColumns: '1fr 118px', gap: 8, alignItems: 'center' }}>
-                        <div style={{ fontWeight: 900 }}>{size} <span style={{ color: '#6b7280', fontSize: 12 }}>max {max}</span></div>
-                        <input
-                          type="number"
-                          min="0"
-                          max={max}
-                          value={packageSelection[size] || ''}
-                          onChange={(event) => updatePackageSelection(size, event.target.value)}
-                          placeholder="0"
-                          style={{ ...styles.input, minHeight: 36, padding: '8px 10px', textAlign: 'center', fontSize: 13 }}
-                        />
+                      <div key={size} style={{ display: 'grid', gap: 6, padding: 7, border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
+                          <strong style={{ fontSize: 13 }}>{size}</strong>
+                          <span style={{ color: '#6b7280', fontSize: 11, fontWeight: 900 }}>max {max}</span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '30px minmax(28px, 1fr) 30px', alignItems: 'center', border: '1px solid #d1d5db', borderRadius: 999, overflow: 'hidden', background: '#fff' }}>
+                          <button type="button" onClick={() => updatePackageSelection(size, Number(packageSelection[size] || 0) - 1)} disabled={max <= 0 || Number(packageSelection[size] || 0) <= 0} style={{ border: 'none', background: '#fff', height: 32, cursor: max > 0 ? 'pointer' : 'not-allowed', padding: 0 }}><Minus size={13} /></button>
+                          <input
+                            type="number"
+                            min="0"
+                            max={max}
+                            value={packageSelection[size] || 0}
+                            onChange={(event) => updatePackageSelection(size, event.target.value)}
+                            style={{ border: 'none', outline: 'none', textAlign: 'center', fontSize: 14, fontWeight: 900, minWidth: 0, width: '100%', padding: 0 }}
+                          />
+                          <button type="button" onClick={() => updatePackageSelection(size, Number(packageSelection[size] || 0) + 1)} disabled={max <= 0 || Number(packageSelection[size] || 0) >= max} style={{ border: 'none', background: '#fff', height: 32, cursor: max > 0 ? 'pointer' : 'not-allowed', padding: 0 }}><Plus size={13} /></button>
+                        </div>
                       </div>
                     ))}
                     <p style={{ margin: 0, color: '#6b7280', fontSize: 12, fontWeight: 800 }}>
@@ -2983,11 +2991,11 @@ function ProductCard({
                 )}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
-                    <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}><Minus size={14} /></button>
-                    <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ width: 42, height: 32, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900 }} />
-                    <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}><Plus size={14} /></button>
+                    <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ border: 'none', background: '#fff', width: 30, height: 30, cursor: 'pointer', padding: 0 }}><Minus size={13} /></button>
+                    <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ width: 34, height: 30, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900, fontSize: 14 }} />
+                    <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ border: 'none', background: '#fff', width: 30, height: 30, cursor: 'pointer', padding: 0 }}><Plus size={13} /></button>
                   </div>
-                  <button type="button" onClick={addPackage} disabled={packageStock <= 0 || !packageReady || (selectPackageSizes && selectedPackagePieces <= 0)} style={{ ...styles.buttonPrimary, minHeight: 36, borderRadius: 999, padding: '8px 12px', fontSize: 12, opacity: packageStock <= 0 || !packageReady || (selectPackageSizes && selectedPackagePieces <= 0) ? 0.5 : 1 }}>
+                  <button type="button" onClick={addPackage} disabled={packageStock <= 0 || !packageReady || (selectPackageSizes && selectedPackagePieces <= 0)} style={{ ...styles.buttonPrimary, minHeight: 34, borderRadius: 999, padding: '7px 10px', fontSize: 11, opacity: packageStock <= 0 || !packageReady || (selectPackageSizes && selectedPackagePieces <= 0) ? 0.5 : 1 }}>
                     Agregar producto
                   </button>
                 </div>
