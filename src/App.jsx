@@ -38,7 +38,7 @@ const ADMIN_SESSION_KEY = 'apartados_admin_session_v2'
 const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v2'
 const CART_STORAGE_KEY = 'denimclick_cart_v2'
 const PRODUCTS_CACHE_KEY = 'denimclick_products_cache_v3'
-const SPECIAL_PRICE_RULES_STORAGE_KEY = 'denimclick_special_price_rules_v3'
+const SPECIAL_PRICE_RULES_STORAGE_KEY = 'denimclick_special_price_rules_v4'
 const PRODUCT_PAGE_SIZE_DESKTOP = 24
 const PRODUCT_PAGE_SIZE_MOBILE = 12
 const NEW_PRODUCT_DAYS = 7
@@ -89,45 +89,47 @@ const CLIENT_PRICE_OVERRIDES = [
 ]
 
 const QUALITY_PRICE_PRESETS = [
-  { quality: 'JEANS LINEA', group: 'PANTALON', prices: { Plata: 285, Oro: 275, Esmeralda: 265, Platino: 255, Diamante: 245, Colaborador: 275, Imperial: 0 }, retail: { offer_price: 249, price_tier10: 289, price_tier3: 499, price: 599 } },
-  { quality: 'JEANS PREMIUM', group: 'PANTALON', prices: { Plata: 305, Oro: 299, Esmeralda: 299, Platino: 299, Diamante: 299, Colaborador: 299, Imperial: 0 }, retail: { offer_price: 259, price_tier10: 315, price_tier3: 599, price: 699 } },
-  { quality: 'C DLX', group: 'PANTALON', prices: { Plata: 355, Oro: 355, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 320, price_tier10: 360, price_tier3: 699, price: 799 } },
-  { quality: 'C DLX PRO', group: 'PANTALON', prices: { Plata: 355, Oro: 355, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 320, price_tier10: 360, price_tier3: 699, price: 799 } },
-  { quality: 'C.PRIME', group: 'PANTALON', prices: { Plata: 355, Oro: 355, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 320, price_tier10: 360, price_tier3: 699, price: 799 } },
-  { quality: 'D.PRIME', group: 'PANTALON', prices: { Plata: 355, Oro: 355, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 320, price_tier10: 360, price_tier3: 699, price: 799 } },
-  { quality: 'KID', group: 'PANTALON', prices: { Plata: 235, Oro: 230, Esmeralda: 230, Platino: 225, Diamante: 225, Colaborador: 230, Imperial: 0 }, retail: { offer_price: 189, price_tier10: 245, price_tier3: 399, price: 499 } },
-  { quality: 'SHORT CABALLERO', group: 'PANTALON', prices: { Plata: 239, Oro: 235, Esmeralda: 235, Platino: 229, Diamante: 229, Colaborador: 235, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 249, price_tier3: 299, price: 399 } },
-  { quality: 'SHORT MARCAS', group: 'PANTALON', prices: { Plata: 255, Oro: 250, Esmeralda: 250, Platino: 250, Diamante: 250, Colaborador: 250, Imperial: 0 }, retail: { offer_price: 220, price_tier10: 259, price_tier3: 299, price: 399 } },
+  { quality: 'JEANS LINEA', group: 'PANTALON', prices: { Plata: 285, Oro: 275, Esmeralda: 265, Platino: 255, Diamante: 245, Colaborador: 275, Imperial: 0 }, retail: { offer_price: 249, price_tier10: 289, price_tier3: 310, price: 350 } },
+  { quality: 'JEANS PREMIUM', group: 'PANTALON', prices: { Plata: 305, Oro: 299, Esmeralda: 299, Platino: 299, Diamante: 299, Colaborador: 299, Imperial: 0 }, retail: { offer_price: 259, price_tier10: 315, price_tier3: 325, price: 350 } },
+  { quality: 'BASICO', group: 'PANTALON', prices: { Plata: 255, Oro: 245, Esmeralda: 235, Platino: 225, Diamante: 215, Colaborador: 245, Imperial: 0 }, retail: { offer_price: 219, price_tier10: 259, price_tier3: 280, price: 320 } },
+  { quality: 'JEANS DELUX', group: 'PANTALON', prices: { Plata: 355, Oro: 355, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 320, price_tier10: 360, price_tier3: 399, price: 450 } },
+  { quality: 'C DLX PRO', group: 'PANTALON', prices: { Plata: 355, Oro: 355, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 320, price_tier10: 360, price_tier3: 399, price: 450 } },
+  { quality: 'C PRIME', group: 'PANTALON', prices: { Plata: 355, Oro: 355, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 320, price_tier10: 360, price_tier3: 399, price: 450 } },
+  { quality: 'D PRIME', group: 'PANTALON', prices: { Plata: 355, Oro: 355, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 320, price_tier10: 360, price_tier3: 399, price: 450 } },
+  { quality: 'KID', group: 'PANTALON', prices: { Plata: 235, Oro: 230, Esmeralda: 230, Platino: 225, Diamante: 225, Colaborador: 230, Imperial: 0 }, retail: { offer_price: 189, price_tier10: 245, price_tier3: 275, price: 289 } },
+  { quality: 'SHORT CABALLERO', group: 'PANTALON', prices: { Plata: 239, Oro: 235, Esmeralda: 235, Platino: 229, Diamante: 229, Colaborador: 235, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 249, price_tier3: 275, price: 289 } },
+  { quality: 'SHORT MARCAS', group: 'PANTALON', prices: { Plata: 255, Oro: 250, Esmeralda: 250, Platino: 250, Diamante: 250, Colaborador: 250, Imperial: 0 }, retail: { offer_price: 220, price_tier10: 259, price_tier3: 279, price: 299 } },
   { quality: 'SHORT DAMA', group: 'PANTALON', prices: { Plata: 199, Oro: 199, Esmeralda: 199, Platino: 199, Diamante: 199, Colaborador: 199, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 199, price_tier3: 199, price: 199 } },
-  { quality: 'W', group: 'PANTALON', prices: { Plata: 249, Oro: 249, Esmeralda: 249, Platino: 249, Diamante: 249, Colaborador: 249, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 255, price_tier3: 299, price: 399 } },
-  { quality: 'W STRAIGHT', group: 'PANTALON', prices: { Plata: 279, Oro: 275, Esmeralda: 275, Platino: 265, Diamante: 265, Colaborador: 275, Imperial: 0 }, retail: { offer_price: 249, price_tier10: 289, price_tier3: 399, price: 499 } },
-  { quality: 'COLOMBIANO', group: 'PANTALON', prices: { Plata: 299, Oro: 299, Esmeralda: 299, Platino: 299, Diamante: 299, Colaborador: 299, Imperial: 0 }, retail: { offer_price: 269, price_tier10: 299, price_tier3: 399, price: 499 } },
-  { quality: 'DC', group: 'PANTALON', prices: { Plata: 350, Oro: 350, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 350, price_tier3: 399, price: 499 } },
-  { quality: 'AM&CO', group: 'PANTALON', prices: { Plata: 320, Oro: 320, Esmeralda: 320, Platino: 320, Diamante: 320, Colaborador: 320, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 320, price_tier3: 399, price: 499 } },
-  { quality: 'L REMATE', group: 'PANTALON', prices: { Plata: 205, Oro: 205, Esmeralda: 205, Platino: 209, Diamante: 199, Colaborador: 205, Imperial: 0 }, retail: { offer_price: 205, price_tier10: 209, price_tier3: 209, price: 209 } },
-  { quality: 'PY L', group: 'PLAYERAS', prices: { Plata: 150, Oro: 145, Esmeralda: 145, Platino: 145, Diamante: 145, Colaborador: 145, Imperial: 0 }, retail: { offer_price: 99, price_tier10: 150, price_tier3: 199, price: 299 } },
-  { quality: 'PYP', group: 'PLAYERAS', prices: { Plata: 175, Oro: 175, Esmeralda: 175, Platino: 159, Diamante: 159, Colaborador: 175, Imperial: 0 }, retail: { offer_price: 139, price_tier10: 185, price_tier3: 299, price: 399 } },
-  { quality: 'PYPIMA', group: 'PLAYERAS', prices: { Plata: 185, Oro: 185, Esmeralda: 185, Platino: 185, Diamante: 185, Colaborador: 185, Imperial: 0 }, retail: { offer_price: 185, price_tier10: 185, price_tier3: 299, price: 399 } },
-  { quality: 'PY DLX', group: 'PLAYERAS', prices: { Plata: 215, Oro: 215, Esmeralda: 215, Platino: 215, Diamante: 215, Colaborador: 215, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 230, price_tier3: 399, price: 499 } },
-  { quality: 'PY ML', group: 'PLAYERAS', prices: { Plata: 210, Oro: 195, Esmeralda: 195, Platino: 185, Diamante: 185, Colaborador: 195, Imperial: 0 }, retail: { offer_price: 185, price_tier10: 210, price_tier3: 299, price: 399 } },
-  { quality: 'PY OVER', group: 'PLAYERAS', prices: { Plata: 250, Oro: 240, Esmeralda: 240, Platino: 240, Diamante: 240, Colaborador: 240, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 250, price_tier3: 399, price: 499 } },
-  { quality: 'PY ML W', group: 'PLAYERAS', prices: { Plata: 179, Oro: 175, Esmeralda: 175, Platino: 159, Diamante: 159, Colaborador: 175, Imperial: 0 }, retail: { offer_price: 139, price_tier10: 185, price_tier3: 299, price: 349 } },
-  { quality: 'PLAYERA TIPO SUETER', group: 'PLAYERAS', prices: { Plata: 290, Oro: 290, Esmeralda: 290, Platino: 290, Diamante: 290, Colaborador: 290, Imperial: 0 }, retail: { offer_price: 290, price_tier10: 290, price_tier3: 399, price: 499 } },
-  { quality: 'PY KID', group: 'PLAYERAS', prices: { Plata: 145, Oro: 140, Esmeralda: 140, Platino: 140, Diamante: 140, Colaborador: 140, Imperial: 0 }, retail: { offer_price: 99, price_tier10: 145, price_tier3: 199, price: 299 } },
-  { quality: 'POLO', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 215, Oro: 195, Esmeralda: 195, Platino: 189, Diamante: 189, Colaborador: 195, Imperial: 0 }, retail: { offer_price: 155, price_tier10: 219, price_tier3: 299, price: 399 } },
-  { quality: 'POLO DELUX', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 299, Oro: 299, Esmeralda: 299, Platino: 299, Diamante: 299, Colaborador: 299, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 299, price_tier3: 399, price: 499 } },
-  { quality: 'CAM', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 279, Oro: 275, Esmeralda: 275, Platino: 269, Diamante: 269, Colaborador: 275, Imperial: 0 }, retail: { offer_price: 239, price_tier10: 285, price_tier3: 299, price: 399 } },
-  { quality: 'CAMISA P', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 359, Oro: 359, Esmeralda: 359, Platino: 359, Diamante: 359, Colaborador: 359, Imperial: 0 }, retail: { offer_price: 359, price_tier10: 359, price_tier3: 499, price: 599 } },
-  { quality: 'CAM OAKTREE', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 289, Oro: 289, Esmeralda: 289, Platino: 289, Diamante: 289, Colaborador: 289, Imperial: 0 }, retail: { offer_price: 239, price_tier10: 289, price_tier3: 399, price: 499 } },
-  { quality: 'SUD', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 355, Oro: 355, Esmeralda: 355, Platino: 355, Diamante: 355, Colaborador: 355, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 355, price_tier3: 399, price: 499 } },
-  { quality: 'SUETER', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 320, Oro: 310, Esmeralda: 310, Platino: 299, Diamante: 299, Colaborador: 310, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 320, price_tier3: 399, price: 499 } },
-  { quality: 'CHM L', group: 'CHAMARRAS', prices: { Plata: 520, Oro: 515, Esmeralda: 515, Platino: 509, Diamante: 509, Colaborador: 515, Imperial: 0 }, retail: { offer_price: 399, price_tier10: 525, price_tier3: 699, price: 799 } },
-  { quality: 'CHM CAP L', group: 'CHAMARRAS', prices: { Plata: 450, Oro: 450, Esmeralda: 450, Platino: 450, Diamante: 450, Colaborador: 450, Imperial: 0 }, retail: { offer_price: 399, price_tier10: 450, price_tier3: 699, price: 799 } },
-  { quality: 'CHM CAP P', group: 'CHAMARRAS', prices: { Plata: 550, Oro: 550, Esmeralda: 550, Platino: 550, Diamante: 550, Colaborador: 550, Imperial: 0 }, retail: { offer_price: 499, price_tier10: 550, price_tier3: 699, price: 799 } },
-  { quality: 'CHM NFL P', group: 'CHAMARRAS', prices: { Plata: 550, Oro: 550, Esmeralda: 550, Platino: 550, Diamante: 550, Colaborador: 550, Imperial: 0 }, retail: { offer_price: 499, price_tier10: 550, price_tier3: 699, price: 799 } },
-  { quality: 'CHM CAP DLX', group: 'CHAMARRAS', prices: { Plata: 650, Oro: 650, Esmeralda: 650, Platino: 650, Diamante: 650, Colaborador: 650, Imperial: 0 }, retail: { offer_price: 599, price_tier10: 650, price_tier3: 799, price: 899 } },
-  { quality: 'CHM NFL DLX', group: 'CHAMARRAS', prices: { Plata: 650, Oro: 650, Esmeralda: 650, Platino: 650, Diamante: 650, Colaborador: 650, Imperial: 0 }, retail: { offer_price: 599, price_tier10: 650, price_tier3: 799, price: 899 } },
-  { quality: 'BLS', group: 'ACCESORIOS', prices: { Plata: 79, Oro: 69, Esmeralda: 69, Platino: 69, Diamante: 69, Colaborador: 69, Imperial: 0 }, retail: { offer_price: 69, price_tier10: 79, price_tier3: 99, price: 199 } },
+  { quality: 'W', group: 'PANTALON', prices: { Plata: 249, Oro: 249, Esmeralda: 249, Platino: 249, Diamante: 249, Colaborador: 249, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 255, price_tier3: 265, price: 279 } },
+  { quality: 'W STRAIGHT', group: 'PANTALON', prices: { Plata: 279, Oro: 275, Esmeralda: 275, Platino: 265, Diamante: 265, Colaborador: 275, Imperial: 0 }, retail: { offer_price: 249, price_tier10: 289, price_tier3: 299, price: 320 } },
+  { quality: 'COLOMBIANO', group: 'PANTALON', prices: { Plata: 299, Oro: 299, Esmeralda: 299, Platino: 299, Diamante: 299, Colaborador: 299, Imperial: 0 }, retail: { offer_price: 269, price_tier10: 299, price_tier3: 299, price: 320 } },
+  { quality: 'DC', group: 'PANTALON', prices: { Plata: 350, Oro: 350, Esmeralda: 350, Platino: 350, Diamante: 350, Colaborador: 350, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 350, price_tier3: 365, price: 370 } },
+  { quality: 'AM&CO', group: 'PANTALON', prices: { Plata: 320, Oro: 320, Esmeralda: 320, Platino: 320, Diamante: 320, Colaborador: 320, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 320, price_tier3: 329, price: 350 } },
+  { quality: 'L REMATE', group: 'PANTALON', prices: { Plata: 205, Oro: 205, Esmeralda: 205, Platino: 205, Diamante: 205, Colaborador: 205, Imperial: 0 }, retail: { offer_price: 205, price_tier10: 209, price_tier3: 209, price: 209 } },
+  { quality: 'PY L', group: 'PLAYERAS', prices: { Plata: 150, Oro: 145, Esmeralda: 145, Platino: 145, Diamante: 145, Colaborador: 145, Imperial: 0 }, retail: { offer_price: 99, price_tier10: 150, price_tier3: 160, price: 180 } },
+  { quality: 'PYP', group: 'PLAYERAS', prices: { Plata: 175, Oro: 175, Esmeralda: 175, Platino: 159, Diamante: 159, Colaborador: 175, Imperial: 0 }, retail: { offer_price: 139, price_tier10: 185, price_tier3: 220, price: 250 } },
+  { quality: 'PY DLX', group: 'PLAYERAS', prices: { Plata: 215, Oro: 215, Esmeralda: 215, Platino: 215, Diamante: 215, Colaborador: 215, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 230, price_tier3: 239, price: 250 } },
+  { quality: 'PY ML', group: 'PLAYERAS', prices: { Plata: 210, Oro: 195, Esmeralda: 195, Platino: 185, Diamante: 185, Colaborador: 195, Imperial: 0 }, retail: { offer_price: 185, price_tier10: 210, price_tier3: 220, price: 250 } },
+  { quality: 'PY OVER', group: 'PLAYERAS', prices: { Plata: 250, Oro: 240, Esmeralda: 240, Platino: 240, Diamante: 240, Colaborador: 240, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 250, price_tier3: 275, price: 299 } },
+  { quality: 'PY ML W', group: 'PLAYERAS', prices: { Plata: 179, Oro: 175, Esmeralda: 175, Platino: 159, Diamante: 159, Colaborador: 175, Imperial: 0 }, retail: { offer_price: 139, price_tier10: 185, price_tier3: 239, price: 249 } },
+  { quality: 'PLAYERA TIPO SUETER', group: 'PLAYERAS', prices: { Plata: 290, Oro: 290, Esmeralda: 290, Platino: 290, Diamante: 290, Colaborador: 290, Imperial: 0 }, retail: { offer_price: 290, price_tier10: 290, price_tier3: 299, price: 499 } },
+  { quality: 'PIMA', group: 'PLAYERAS', prices: { Plata: 185, Oro: 185, Esmeralda: 185, Platino: 185, Diamante: 185, Colaborador: 185, Imperial: 0 }, retail: { offer_price: 185, price_tier10: 185, price_tier3: 199, price: 220 } },
+  { quality: 'PYPIMA', group: 'PLAYERAS', prices: { Plata: 185, Oro: 185, Esmeralda: 185, Platino: 185, Diamante: 185, Colaborador: 185, Imperial: 0 }, retail: { offer_price: 185, price_tier10: 185, price_tier3: 199, price: 220 } },
+  { quality: 'PY KID', group: 'PLAYERAS', prices: { Plata: 145, Oro: 140, Esmeralda: 140, Platino: 140, Diamante: 140, Colaborador: 140, Imperial: 0 }, retail: { offer_price: 99, price_tier10: 145, price_tier3: 165, price: 175 } },
+  { quality: 'POLO', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 215, Oro: 195, Esmeralda: 195, Platino: 189, Diamante: 189, Colaborador: 195, Imperial: 0 }, retail: { offer_price: 155, price_tier10: 219, price_tier3: 239, price: 250 } },
+  { quality: 'POLO DELUX', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 299, Oro: 299, Esmeralda: 299, Platino: 299, Diamante: 299, Colaborador: 299, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 299, price_tier3: 320, price: 350 } },
+  { quality: 'CAM', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 279, Oro: 275, Esmeralda: 275, Platino: 269, Diamante: 269, Colaborador: 275, Imperial: 0 }, retail: { offer_price: 239, price_tier10: 285, price_tier3: 289, price: 299 } },
+  { quality: 'CAM OAKTREE', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 289, Oro: 289, Esmeralda: 289, Platino: 289, Diamante: 289, Colaborador: 289, Imperial: 0 }, retail: { offer_price: 239, price_tier10: 289, price_tier3: 299, price: 320 } },
+  { quality: 'CAMISA P', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 359, Oro: 359, Esmeralda: 359, Platino: 359, Diamante: 359, Colaborador: 359, Imperial: 0 }, retail: { offer_price: 359, price_tier10: 359, price_tier3: 375, price: 399 } },
+  { quality: 'SUD', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 355, Oro: 355, Esmeralda: 355, Platino: 355, Diamante: 355, Colaborador: 355, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 355, price_tier3: 375, price: 399 } },
+  { quality: 'SUETER', group: 'POLOS,CAMISAS,SUDADERAS', prices: { Plata: 320, Oro: 310, Esmeralda: 310, Platino: 299, Diamante: 299, Colaborador: 310, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 320, price_tier3: 330, price: 350 } },
+  { quality: 'CHM L', group: 'CHAMARRAS', prices: { Plata: 520, Oro: 515, Esmeralda: 515, Platino: 509, Diamante: 509, Colaborador: 515, Imperial: 0 }, retail: { offer_price: 399, price_tier10: 525, price_tier3: 550, price: 599 } },
+  { quality: 'CHM CAP L', group: 'CHAMARRAS', prices: { Plata: 450, Oro: 450, Esmeralda: 450, Platino: 450, Diamante: 450, Colaborador: 450, Imperial: 0 }, retail: { offer_price: 399, price_tier10: 450, price_tier3: 489, price: 499 } },
+  { quality: 'CHM CAP P', group: 'CHAMARRAS', prices: { Plata: 550, Oro: 550, Esmeralda: 550, Platino: 550, Diamante: 550, Colaborador: 550, Imperial: 0 }, retail: { offer_price: 499, price_tier10: 550, price_tier3: 589, price: 599 } },
+  { quality: 'CHM NFL P', group: 'CHAMARRAS', prices: { Plata: 550, Oro: 550, Esmeralda: 550, Platino: 550, Diamante: 550, Colaborador: 550, Imperial: 0 }, retail: { offer_price: 499, price_tier10: 550, price_tier3: 589, price: 599 } },
+  { quality: 'CHM CAP DLX', group: 'CHAMARRAS', prices: { Plata: 650, Oro: 650, Esmeralda: 650, Platino: 650, Diamante: 650, Colaborador: 650, Imperial: 0 }, retail: { offer_price: 599, price_tier10: 650, price_tier3: 689, price: 699 } },
+  { quality: 'CHM NFL DLX', group: 'CHAMARRAS', prices: { Plata: 650, Oro: 650, Esmeralda: 650, Platino: 650, Diamante: 650, Colaborador: 650, Imperial: 0 }, retail: { offer_price: 599, price_tier10: 650, price_tier3: 689, price: 699 } },
+  { quality: 'BLS', group: 'ACCESORIOS', prices: { Plata: 79, Oro: 69, Esmeralda: 69, Platino: 69, Diamante: 69, Colaborador: 69, Imperial: 0 }, retail: { offer_price: 69, price_tier10: 79, price_tier3: 89, price: 99 } },
   { quality: 'MONEDEROS', group: 'ACCESORIOS', prices: { Plata: 199, Oro: 199, Esmeralda: 199, Platino: 199, Diamante: 199, Colaborador: 199, Imperial: 0 }, retail: { offer_price: 99, price_tier10: 199, price_tier3: 220, price: 250 } },
   { quality: 'BOLSAS LINEA', group: 'ACCESORIOS', prices: { Plata: 299, Oro: 299, Esmeralda: 299, Platino: 299, Diamante: 299, Colaborador: 299, Imperial: 0 }, retail: { offer_price: 199, price_tier10: 299, price_tier3: 320, price: 350 } },
   { quality: 'BOLSAS PREMIUN', group: 'ACCESORIOS', prices: { Plata: 399, Oro: 399, Esmeralda: 399, Platino: 399, Diamante: 399, Colaborador: 399, Imperial: 0 }, retail: { offer_price: 299, price_tier10: 399, price_tier3: 420, price: 450 } },
@@ -265,7 +267,7 @@ const BASE_CATEGORY_MAP = {
 const JEANS_FITS = ['Straight', 'Slim', 'Skinny', 'Regular', 'Relaxed', 'Baggy']
 
 const QUALITY_OPTIONS = QUALITY_PRICE_PRESETS.map((preset) => preset.quality)
-const QUALITY_SELECT_BLOCKLIST = new Set(['JEANS PREMIUM TOMMY', 'JEANS DLX', 'JEANS BASICO 514', 'PYDLX', 'PDLX'])
+const QUALITY_SELECT_BLOCKLIST = new Set(['JEANS PREMIUM TOMMY', 'JEANS DLX', 'C DLX', 'JEANS BASICO 514', 'PYDLX', 'PDLX'])
 
 const BRANDS = [
   'Levi’s',
@@ -424,9 +426,9 @@ function isKidsAudience(audience) {
 }
 
 function getQualityPricePreset(quality) {
-  const normalizedQuality = normalizeRuleText(quality)
+  const normalizedQuality = normalizeQualityText(quality)
   if (!normalizedQuality) return null
-  return QUALITY_PRICE_PRESETS.find((preset) => normalizeRuleText(preset.quality) === normalizedQuality) || null
+  return QUALITY_PRICE_PRESETS.find((preset) => normalizeQualityText(preset.quality) === normalizedQuality) || null
 }
 
 function getQualityDefaultPricing(quality) {
@@ -474,6 +476,18 @@ function normalizeRuleText(value) {
     .trim()
 }
 
+function normalizeQualityText(value) {
+  const normalized = normalizeRuleText(value)
+  const aliases = {
+    'c dlx': 'jeans delux',
+    'jeans dlx': 'jeans delux',
+    'jeans delux': 'jeans delux',
+    'bolsas premium': 'bolsas premiun',
+    'bolsas premiun': 'bolsas premiun',
+  }
+  return aliases[normalized] || normalized
+}
+
 function productMatchesSpecialRule(product, rule) {
   if (!product || !rule) return false
   const audiences = normalizeMetaList(rule.audience || 'Todo')
@@ -497,11 +511,13 @@ function productMatchesSpecialRule(product, rule) {
   const qualityOk =
     qualities.length === 0 ||
     qualities.some((quality) => {
-      const normalizedQuality = normalizeRuleText(quality)
+      const normalizedQuality = normalizeQualityText(quality)
+      const productQuality = normalizeQualityText(product.quality)
       return (
         normalizedQuality === 'todas' ||
         normalizedQuality === 'todos' ||
-        normalizeRuleText(product.quality).includes(normalizedQuality)
+        (productQuality &&
+          (productQuality.includes(normalizedQuality) || normalizedQuality.includes(productQuality)))
       )
     })
   const combinedText = normalizeRuleText(product.name + ' ' + product.category + ' ' + product.subcategory + ' ' + product.brand + ' ' + (product.quality || ''))
