@@ -914,7 +914,6 @@ function productHasOnlyOneImage(product) {
 }
 
 function isLastUnitsProduct(product) {
-  if (productHasOnlyOneImage(product)) return true
   if (Number(product?.package_stock || 0) > 0) return false
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
@@ -6729,13 +6728,9 @@ function StoreView({
 
     list.sort((a, b) => {
       const lastUnitsFilterActive = storeFit === LAST_UNITS_FILTER
-      const aLastUnits = !lastUnitsFilterActive && isLastUnitsProduct(a)
-      const bLastUnits = !lastUnitsFilterActive && isLastUnitsProduct(b)
-      if (aLastUnits !== bLastUnits) return aLastUnits ? 1 : -1
-
-      const aSingleImage = !lastUnitsFilterActive && productHasOnlyOneImage(a)
-      const bSingleImage = !lastUnitsFilterActive && productHasOnlyOneImage(b)
-      if (aSingleImage !== bSingleImage) return aSingleImage ? 1 : -1
+      const aTailCatalog = !lastUnitsFilterActive && (isLastUnitsProduct(a) || productHasOnlyOneImage(a))
+      const bTailCatalog = !lastUnitsFilterActive && (isLastUnitsProduct(b) || productHasOnlyOneImage(b))
+      if (aTailCatalog !== bTailCatalog) return aTailCatalog ? 1 : -1
 
       const aPriority = (a.is_offer ? 2000000 : 0) + (a.is_new ? 1000000 : 0) + Number(a.sales_count || 0) * 1000 + new Date(a.created_at || 0).getTime()
       const bPriority = (b.is_offer ? 2000000 : 0) + (b.is_new ? 1000000 : 0) + Number(b.sales_count || 0) * 1000 + new Date(b.created_at || 0).getTime()
