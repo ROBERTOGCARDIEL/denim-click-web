@@ -913,6 +913,15 @@ function productHasOnlyOneImage(product) {
   return uniqueImages.size <= 1
 }
 
+function rowHasKnownSingleImage(row, images = []) {
+  const hasImageJson =
+    Array.isArray(row?.images_json) ||
+    (typeof row?.images_json === 'string' && row.images_json.trim())
+
+  if (!hasImageJson) return false
+  return productHasOnlyOneImage({ images })
+}
+
 function isLastUnitsProduct(product) {
   if (Number(product?.package_stock || 0) > 0) return false
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
@@ -1155,7 +1164,7 @@ function normalizeProduct(row) {
     price_tier10: publicTier10,
     special_price: publicSpecial,
     active: row.active !== false,
-    is_new: row.is_new !== false && isWithinDays(row.created_at, NEW_PRODUCT_DAYS) && !productHasOnlyOneImage({ images }),
+    is_new: row.is_new !== false && isWithinDays(row.created_at, NEW_PRODUCT_DAYS) && !rowHasKnownSingleImage(row, images),
     is_offer: offerActive,
     sales_count: Number(row.sales_count || 0),
     category_order: Number(row.category_order || 0),
