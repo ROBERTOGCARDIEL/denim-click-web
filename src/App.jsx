@@ -900,16 +900,21 @@ function getProductBasePrice(product) {
 }
 
 function productHasOnlyOneImage(product) {
-  const imageCount = Array.isArray(product?.images)
-    ? product.images.filter(Boolean).length
+  const images = Array.isArray(product?.images)
+    ? product.images
     : product?.images
-      ? 1
-      : 0
-  return imageCount <= 1
+      ? [product.images]
+      : []
+  const uniqueImages = new Set(
+    images
+      .map((image) => String(image || '').trim())
+      .filter(Boolean)
+  )
+  return uniqueImages.size <= 1
 }
 
 function isLastUnitsProduct(product) {
-  if (productHasVisibleStock(product) && productHasOnlyOneImage(product)) return true
+  if (productHasOnlyOneImage(product)) return true
   if (Number(product?.package_stock || 0) > 0) return false
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
@@ -2803,6 +2808,11 @@ function ProductCard({
   const visiblePrice = offerUnitPrice || Number(product.price || 0)
   const visibleTier3Price = offerUnitPrice || Number(product.price_tier3 || product.price || 0)
   const visibleTier10Price = offerUnitPrice || Number(product.price_tier10 || product.price_tier3 || product.price || 0)
+  const visibleSpecialPrice = offerUnitPrice || (
+    specialPriceUnlocked && getCartUnitPrice
+      ? Number(getCartUnitPrice(product) || product.special_price || visibleTier10Price)
+      : visibleTier10Price
+  )
 
   useEffect(() => {
     if (pickerMode === 'sizes' && !hasSizeStock && hasPackageStock) setPickerMode('package')
@@ -2981,6 +2991,31 @@ function ProductCard({
 
         {isMobile ? (
           <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
+            {!specialClientSession?.active ? (
+              <div style={{ display: 'grid', gap: 5, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
+                <div style={{ background: '#f8fafc', borderRadius: 10, padding: '7px 8px', border: '1px solid #e5e7eb', minWidth: 0 }}>
+                  <div style={{ fontSize: 9, color: '#6b7280', fontWeight: 800 }}>NORMAL</div>
+                  <div style={{ fontWeight: 900, fontSize: 13 }}>{mxn(visiblePrice)}</div>
+                </div>
+                <div style={{ background: '#eff6ff', borderRadius: 10, padding: '7px 8px', border: '1px solid #bfdbfe', minWidth: 0 }}>
+                  <div style={{ fontSize: 9, color: '#1d4ed8', fontWeight: 800 }}>3+ PZ</div>
+                  <div style={{ fontWeight: 900, fontSize: 13 }}>{mxn(visibleTier3Price)}</div>
+                </div>
+                <div style={{ background: '#ecfdf5', borderRadius: 10, padding: '7px 8px', border: '1px solid #a7f3d0', minWidth: 0 }}>
+                  <div style={{ fontSize: 9, color: '#047857', fontWeight: 800 }}>10+ PZ</div>
+                  <div style={{ fontWeight: 900, fontSize: 13 }}>{mxn(visibleTier10Price)}</div>
+                </div>
+              </div>
+            ) : specialPriceUnlocked ? (
+              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 10, padding: 9, fontSize: 12, color: '#065f46', fontWeight: 800 }}>
+                Precio especial activo para cliente {specialClientSession.client_tier}: {mxn(visibleSpecialPrice)}
+              </div>
+            ) : (
+              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: 9, fontSize: 12, color: '#9a3412', fontWeight: 800 }}>
+                Precio Plata se activa al completar 10 piezas.
+              </div>
+            )}
+
             {pickerMode === 'package' && hasPackageStock ? (
               <div style={{ border: '1px solid #e5dfd4', borderRadius: 12, padding: 9, background: '#fbfaf7', display: 'grid', gap: 8, minWidth: 0 }}>
                 <div style={{ display: 'grid', gap: 2 }}>
@@ -3145,7 +3180,7 @@ function ProductCard({
                 </div>
               ) : specialPriceUnlocked ? (
                 <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 12, padding: 10, fontSize: 13, color: '#065f46', fontWeight: 700 }}>
-                  Precio especial activo para cliente {specialClientSession.client_tier}
+                  Precio especial activo para cliente {specialClientSession.client_tier}: {mxn(visibleSpecialPrice)}
                 </div>
               ) : (
                 <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: 10, fontSize: 13, color: '#9a3412', fontWeight: 700 }}>
@@ -6697,6 +6732,10 @@ function StoreView({
       const aLastUnits = !lastUnitsFilterActive && isLastUnitsProduct(a)
       const bLastUnits = !lastUnitsFilterActive && isLastUnitsProduct(b)
       if (aLastUnits !== bLastUnits) return aLastUnits ? 1 : -1
+
+      const aSingleImage = !lastUnitsFilterActive && productHasOnlyOneImage(a)
+      const bSingleImage = !lastUnitsFilterActive && productHasOnlyOneImage(b)
+      if (aSingleImage !== bSingleImage) return aSingleImage ? 1 : -1
 
       const aPriority = (a.is_offer ? 2000000 : 0) + (a.is_new ? 1000000 : 0) + Number(a.sales_count || 0) * 1000 + new Date(a.created_at || 0).getTime()
       const bPriority = (b.is_offer ? 2000000 : 0) + (b.is_new ? 1000000 : 0) + Number(b.sales_count || 0) * 1000 + new Date(b.created_at || 0).getTime()
