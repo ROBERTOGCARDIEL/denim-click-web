@@ -927,7 +927,7 @@ function isLastUnitsProduct(product) {
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
   if (loosePieces <= 0) return false
-  return loosePieces < 5 && stockEntries.length < 4
+  return loosePieces < 6 || stockEntries.length <= 1
 }
 
 function generateOrderNumber() {
@@ -6737,8 +6737,8 @@ function StoreView({
 
     list.sort((a, b) => {
       const lastUnitsFilterActive = storeFit === LAST_UNITS_FILTER
-      const aTailCatalog = !lastUnitsFilterActive && (isLastUnitsProduct(a) || productHasOnlyOneImage(a))
-      const bTailCatalog = !lastUnitsFilterActive && (isLastUnitsProduct(b) || productHasOnlyOneImage(b))
+      const aTailCatalog = !lastUnitsFilterActive && isLastUnitsProduct(a)
+      const bTailCatalog = !lastUnitsFilterActive && isLastUnitsProduct(b)
       if (aTailCatalog !== bTailCatalog) return aTailCatalog ? 1 : -1
 
       const aPriority = (a.is_offer ? 2000000 : 0) + (a.is_new ? 1000000 : 0) + Number(a.sales_count || 0) * 1000 + new Date(a.created_at || 0).getTime()
