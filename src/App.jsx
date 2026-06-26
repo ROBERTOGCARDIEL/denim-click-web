@@ -38,10 +38,12 @@ const ADMIN_SESSION_KEY = 'apartados_admin_session_v2'
 const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v2'
 const CART_STORAGE_KEY = 'denimclick_cart_v2'
 const PRODUCTS_CACHE_KEY = 'denimclick_products_cache_v3'
-const SPECIAL_PRICE_RULES_STORAGE_KEY = 'denimclick_special_price_rules_v4'
+const SPECIAL_PRICE_RULES_STORAGE_KEY = 'denimclick_special_price_rules_v5'
 const PRODUCT_PAGE_SIZE_DESKTOP = 24
 const PRODUCT_PAGE_SIZE_MOBILE = 12
 const NEW_PRODUCT_DAYS = 7
+const PUBLIC_PRICE_SINGLE_MARKUP = 200
+const PUBLIC_PRICE_TIER3_MARKUP = 100
 const LAST_UNITS_FILTER = '__last_units__'
 const PROMO_ROTATE_MS = 5200
 const HOME_APARTADO_VIDEO_URL = '/apartado-mayoreo.mp4'
@@ -431,15 +433,29 @@ function getQualityPricePreset(quality) {
   return QUALITY_PRICE_PRESETS.find((preset) => normalizeQualityText(preset.quality) === normalizedQuality) || null
 }
 
+function getPublicPricingFromRetail(retail = {}) {
+  const tier10 = Number(retail.price_tier10 || retail.special_price || retail.price_tier3 || retail.price || 0)
+  if (!tier10) {
+    return {
+      price: Number(retail.price || 0),
+      price_tier3: Number(retail.price_tier3 || retail.price || 0),
+      price_tier10: 0,
+      special_price: 0,
+    }
+  }
+
+  return {
+    price: tier10 + PUBLIC_PRICE_SINGLE_MARKUP,
+    price_tier3: tier10 + PUBLIC_PRICE_TIER3_MARKUP,
+    price_tier10: tier10,
+    special_price: tier10,
+  }
+}
+
 function getQualityDefaultPricing(quality) {
   const preset = getQualityPricePreset(quality)
   if (!preset) return null
-  return {
-    price: Number(preset.retail.price || 0),
-    price_tier3: Number(preset.retail.price_tier3 || preset.retail.price || 0),
-    price_tier10: Number(preset.retail.price_tier10 || preset.retail.price || 0),
-    special_price: Number(preset.retail.price_tier10 || preset.retail.price || 0),
-  }
+  return getPublicPricingFromRetail(preset.retail)
 }
 
 function getDefaultProductPricing(audience, category, current = {}) {
@@ -482,6 +498,7 @@ function normalizeQualityText(value) {
     'c dlx': 'jeans delux',
     'jeans dlx': 'jeans delux',
     'jeans delux': 'jeans delux',
+    'jeans deluxe': 'jeans delux',
     'bolsas premium': 'bolsas premiun',
     'bolsas premiun': 'bolsas premiun',
   }
@@ -516,8 +533,7 @@ function productMatchesSpecialRule(product, rule) {
       return (
         normalizedQuality === 'todas' ||
         normalizedQuality === 'todos' ||
-        (productQuality &&
-          (productQuality.includes(normalizedQuality) || normalizedQuality.includes(productQuality)))
+        (productQuality && productQuality === normalizedQuality)
       )
     })
   const combinedText = normalizeRuleText(product.name + ' ' + product.category + ' ' + product.subcategory + ' ' + product.brand + ' ' + (product.quality || ''))
@@ -883,7 +899,17 @@ function getProductBasePrice(product) {
   return Number(product?.price || 0)
 }
 
+function productHasOnlyOneImage(product) {
+  const imageCount = Array.isArray(product?.images)
+    ? product.images.filter(Boolean).length
+    : product?.images
+      ? 1
+      : 0
+  return imageCount <= 1
+}
+
 function isLastUnitsProduct(product) {
+  if (productHasVisibleStock(product) && productHasOnlyOneImage(product)) return true
   if (Number(product?.package_stock || 0) > 0) return false
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
@@ -1089,6 +1115,11 @@ function normalizeProduct(row) {
   const parsedDescription = splitProductDescription(row.description || '')
   const productMeta = parsedDescription.meta || {}
   const offerActive = row.is_offer === true && isOfferCurrentlyActive(productMeta, row)
+  const qualityPricing = getQualityDefaultPricing(productMeta.quality)
+  const publicPrice = qualityPricing?.price ?? Number(row.price_base ?? row.price ?? 0)
+  const publicTier3 = qualityPricing?.price_tier3 ?? Number(row.price_tier3 ?? row.price_base ?? row.price ?? 0)
+  const publicTier10 = qualityPricing?.price_tier10 ?? Number(row.price_tier10 ?? row.price_base ?? row.price ?? 0)
+  const publicSpecial = qualityPricing?.special_price ?? Number(row.special_price ?? row.price_tier10 ?? row.price_base ?? row.price ?? 0)
 
   return {
     id: row.id,
@@ -1105,8 +1136,8 @@ function normalizeProduct(row) {
     sizes,
     stock,
     stock_total: Number(row.stock || totalStock(stock)),
-    price: Number(row.price_base ?? row.price ?? 0),
-    price_base: Number(row.price_base ?? row.price ?? 0),
+    price: publicPrice,
+    price_base: publicPrice,
     offer_price: Number(productMeta.offer_price || 0),
     offer_duration_days: Number(productMeta.offer_duration_days || 0),
     offer_forever: productMeta.offer_forever === true,
@@ -1116,9 +1147,9 @@ function normalizeProduct(row) {
     promo_discount_percent: Number(productMeta.promo_discount_percent || 0),
     promo_free_shipping: productMeta.promo_free_shipping === true,
     promo_terms: productMeta.promo_terms || '',
-    price_tier3: Number(row.price_tier3 ?? row.price_base ?? row.price ?? 0),
-    price_tier10: Number(row.price_tier10 ?? row.price_base ?? row.price ?? 0),
-    special_price: Number(row.special_price ?? 0),
+    price_tier3: publicTier3,
+    price_tier10: publicTier10,
+    special_price: publicSpecial,
     active: row.active !== false,
     is_new: row.is_new !== false && isWithinDays(row.created_at, NEW_PRODUCT_DAYS),
     is_offer: offerActive,
@@ -2766,6 +2797,12 @@ function ProductCard({
   const packageUnitPrice = specialPriceUnlocked && getCartUnitPrice
     ? Number(getCartUnitPrice(product) || getPackageUnitPrice(product))
     : getPackageUnitPrice(product)
+  const offerUnitPrice = product?.is_offer && Number(product.offer_price || 0) > 0
+    ? Number(product.offer_price || 0)
+    : 0
+  const visiblePrice = offerUnitPrice || Number(product.price || 0)
+  const visibleTier3Price = offerUnitPrice || Number(product.price_tier3 || product.price || 0)
+  const visibleTier10Price = offerUnitPrice || Number(product.price_tier10 || product.price_tier3 || product.price || 0)
 
   useEffect(() => {
     if (pickerMode === 'sizes' && !hasSizeStock && hasPackageStock) setPickerMode('package')
@@ -3095,15 +3132,15 @@ function ProductCard({
                 <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(3, 1fr)' }}>
                   <div style={{ background: '#f8fafc', borderRadius: 12, padding: 8, border: '1px solid #e5e7eb' }}>
                     <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 700 }}>NORMAL</div>
-                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(product.price)}</div>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(visiblePrice)}</div>
                   </div>
                   <div style={{ background: '#eff6ff', borderRadius: 12, padding: 8, border: '1px solid #bfdbfe' }}>
                     <div style={{ fontSize: 10, color: '#1d4ed8', fontWeight: 700 }}>3+ PZ</div>
-                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(product.price_tier3)}</div>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(visibleTier3Price)}</div>
                   </div>
                   <div style={{ background: '#ecfdf5', borderRadius: 12, padding: 8, border: '1px solid #a7f3d0' }}>
                     <div style={{ fontSize: 10, color: '#047857', fontWeight: 700 }}>10+ PZ</div>
-                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(product.price_tier10)}</div>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(visibleTier10Price)}</div>
                   </div>
                 </div>
               ) : specialPriceUnlocked ? (
@@ -3330,6 +3367,9 @@ function ProductQuickView({
   const availableStock = product ? totalStock(product.stock) : 0
   const specialPriceUnlocked = specialClientSession?.active && (specialClientSession.client_tier !== 'Plata' || Number(totalPieces || 0) >= 10)
   const displayPrice = product ? (specialPriceUnlocked ? Number(getCartUnitPrice?.(product) || getProductBasePrice(product)) : getProductBasePrice(product)) : 0
+  const displayTier3Price = product?.is_offer && Number(product.offer_price || 0) > 0
+    ? Number(product.offer_price || 0)
+    : Number(product?.price_tier3 || displayPrice || 0)
   const packagePieces = product ? getPackagePieces(product) : 10
   const packageStock = product ? Number(product.package_stock || 0) : 0
   const hasSizeStock = availableStock > 0
@@ -3603,9 +3643,9 @@ function ProductQuickView({
             ) : null}
             <p style={{ margin: '14px 0 0', fontSize: 28, fontWeight: 950 }}>
               {mxn(displayPrice)}
-              {!specialClientSession?.active && product.price_tier3 < product.price ? (
+              {!specialClientSession?.active && !product.is_offer && displayTier3Price < displayPrice ? (
                 <span style={{ display: 'block', color: '#9a6b16', fontSize: 14, marginTop: 4 }}>
-                  Compra 3+ piezas desde {mxn(product.price_tier3)}
+                  Compra 3+ piezas desde {mxn(displayTier3Price)}
                 </span>
               ) : null}
             </p>
@@ -7103,11 +7143,20 @@ function StoreView({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setBagOpen(true)}
+                      onClick={() => {
+                        setShowHomeCatalog(true)
+                        setStoreAudience('Oferta')
+                        setStoreCategory('Todos')
+                        setStoreBrand('Todas')
+                        setStoreFit('Todos')
+                        setStoreQuality('Todas')
+                        setStoreSearch('')
+                        window.setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 0)
+                      }}
                       style={{ ...styles.buttonSecondary, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,.38)', borderRadius: 999 }}
                     >
                       <ShoppingBag size={18} />
-                      Ver bolsa
+                      Ver ofertas
                     </button>
                   </div>
                 </div>
@@ -8256,6 +8305,10 @@ export default function App() {
   }
 
   const getCartUnitPrice = (product) => {
+    if (product?.is_offer && Number(product.offer_price || 0) > 0) {
+      return Number(product.offer_price || 0)
+    }
+
     const normalPrice = tier.key === 'price'
       ? getProductBasePrice(product)
       : Number(product[tier.key] || getProductBasePrice(product))
