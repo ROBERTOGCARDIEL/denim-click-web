@@ -37,7 +37,7 @@ const ADMIN_PASSWORD = 'Denimzoa2026'
 const ADMIN_SESSION_KEY = 'apartados_admin_session_v2'
 const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v2'
 const CART_STORAGE_KEY = 'denimclick_cart_v2'
-const PRODUCTS_CACHE_KEY = 'denimclick_products_cache_v3'
+const PRODUCTS_CACHE_KEY = 'denimclick_products_cache_v4'
 const SPECIAL_PRICE_RULES_STORAGE_KEY = 'denimclick_special_price_rules_v5'
 const PRODUCT_PAGE_SIZE_DESKTOP = 24
 const PRODUCT_PAGE_SIZE_MOBILE = 12
@@ -48,7 +48,7 @@ const LAST_UNITS_FILTER = '__last_units__'
 const PROMO_ROTATE_MS = 5200
 const HOME_APARTADO_VIDEO_URL = '/apartado-mayoreo.mp4'
 const PRODUCT_META_MARKER = '[[DENIM_CLICK_PRODUCT_META]]'
-const PRODUCT_LIST_COLUMNS = 'id,created_at,name,description,category,subcategory,audience,brand,images,sizes,stock,stock_json,price,price_base,price_tier3,price_tier10,special_price,active,is_new,is_offer,sales_count,category_order'
+const PRODUCT_LIST_COLUMNS = 'id,created_at,name,description,category,subcategory,audience,brand,images,images_json,sizes,stock,stock_json,price,price_base,price_tier3,price_tier10,special_price,active,is_new,is_offer,sales_count,category_order'
 const WHATSAPP_NUMBER = '525572665573'
 const SUPPORT_WHATSAPP_NUMBER = '525641124995'
 const SOCIAL_LINKS = [
@@ -1155,7 +1155,7 @@ function normalizeProduct(row) {
     price_tier10: publicTier10,
     special_price: publicSpecial,
     active: row.active !== false,
-    is_new: row.is_new !== false && isWithinDays(row.created_at, NEW_PRODUCT_DAYS),
+    is_new: row.is_new !== false && isWithinDays(row.created_at, NEW_PRODUCT_DAYS) && !productHasOnlyOneImage({ images }),
     is_offer: offerActive,
     sales_count: Number(row.sales_count || 0),
     category_order: Number(row.category_order || 0),
@@ -1191,7 +1191,7 @@ function productToDb(product, options = {}) {
     price_tier10: Number(product.price_tier10 || 0),
     special_price: Number(product.special_price || 0),
     active: product.active !== false,
-    is_new: product.is_new !== false,
+    is_new: product.is_new !== false && !productHasOnlyOneImage(product),
     is_offer: product.is_offer === true,
     sales_count: Number(product.sales_count || 0),
     category_order: Number(product.category_order || 0),
