@@ -899,12 +899,40 @@ function getProductBasePrice(product) {
   return Number(product?.price || 0)
 }
 
+function getProductImageList(productOrImages) {
+  const source = Array.isArray(productOrImages) || typeof productOrImages === 'string'
+    ? productOrImages
+    : productOrImages?.images_json ?? productOrImages?.images
+
+  if (Array.isArray(source)) {
+    return source.map((image) => String(image || '').trim()).filter(Boolean)
+  }
+
+  if (typeof source !== 'string') return []
+  const trimmed = source.trim()
+  if (!trimmed) return []
+
+  if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+    try {
+      const parsed = JSON.parse(trimmed)
+      return Array.isArray(parsed)
+        ? parsed.map((image) => String(image || '').trim()).filter(Boolean)
+        : []
+    } catch {
+      return [trimmed]
+    }
+  }
+
+  return [trimmed]
+}
+
+function normalizeProductImages(product) {
+  if (!product) return product
+  return { ...product, images: getProductImageList(product) }
+}
+
 function productHasOnlyOneImage(product) {
-  const images = Array.isArray(product?.images)
-    ? product.images
-    : product?.images
-      ? [product.images]
-      : []
+  const images = getProductImageList(product)
   const uniqueImages = new Set(
     images
       .map((image) => String(image || '').trim())
@@ -953,7 +981,7 @@ function getOrderCancelReason(order) {
 }
 
 function getCover(product) {
-  return Array.isArray(product.images) && product.images.length ? product.images[0] : ''
+  return getProductImageList(product)[0] || ''
 }
 
 function totalStock(stock) {
@@ -1483,13 +1511,18 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
 
 
   if (!open || !product) return null
-  const images = product.images || []
+  const images = getProductImageList(product)
+  const safeImageIndex = images.length
+    ? Math.min(Math.max(Number(imageIndex || 0), 0), images.length - 1)
+    : 0
 
   const previousImage = () => {
+    if (!images.length || typeof setImageIndex !== 'function') return
     setImageIndex((p) => (p - 1 + images.length) % images.length)
   }
 
   const nextImage = () => {
+    if (!images.length || typeof setImageIndex !== 'function') return
     setImageIndex((p) => (p + 1) % images.length)
   }
 
@@ -1530,7 +1563,7 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
       <div style={{ width: '100%', maxWidth: 1040 }}>
         <div style={{ color: '#fff', marginBottom: 12, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <strong>{product.name}</strong>
-          <span>{imageIndex + 1} / {images.length || 1}</span>
+          <span>{safeImageIndex + 1} / {images.length || 1}</span>
         </div>
 
         <div
@@ -1542,7 +1575,7 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
             maxHeight: '78vh',
           }}
         >
-          {images[imageIndex] ? (
+          {images[safeImageIndex] ? (
             <button
               type="button"
               onClick={() => setZoomed((value) => !value)}
@@ -1556,7 +1589,7 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
               }}
             >
               <img
-                src={images[imageIndex]}
+                src={images[safeImageIndex]}
                 alt={product.name}
                 style={{
                   width: '100%',
@@ -1624,10 +1657,10 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
               <button
                 key={idx}
                 type="button"
-                onClick={() => setImageIndex(idx)}
+                onClick={() => typeof setImageIndex === 'function' && setImageIndex(idx)}
                 style={{
                   padding: 0,
-                  border: idx === imageIndex ? '2px solid #fff' : '1px solid rgba(255,255,255,.25)',
+                  border: idx === safeImageIndex ? '2px solid #fff' : '1px solid rgba(255,255,255,.25)',
                   borderRadius: 8,
                   overflow: 'hidden',
                   background: 'transparent',
@@ -2483,7 +2516,7 @@ function ProductMediaCarousel({
   onOpenQuickView,
   fetchProductImages,
 }) {
-  const initialImages = Array.isArray(product.images) && product.images.length ? product.images : []
+  const initialImages = getProductImageList(product)
   const [loadedImages, setLoadedImages] = useState(initialImages)
   const images = loadedImages.length ? loadedImages : initialImages
   const [imageIndex, setImageIndex] = useState(0)
@@ -2495,7 +2528,7 @@ function ProductMediaCarousel({
 
   useEffect(() => {
     setImageIndex(0)
-    setLoadedImages(Array.isArray(product.images) && product.images.length ? product.images : [])
+    setLoadedImages(getProductImageList(product))
     loadingFullImagesRef.current = false
   }, [product.id, product.images])
 
@@ -2504,8 +2537,9 @@ function ProductMediaCarousel({
     loadingFullImagesRef.current = true
     fetchProductImages(product.id)
       .then((fullImages) => {
-        if (Array.isArray(fullImages) && fullImages.length > images.length) {
-          setLoadedImages(fullImages)
+        const nextImages = getProductImageList(fullImages)
+        if (nextImages.length > images.length) {
+          setLoadedImages(nextImages)
         }
       })
       .finally(() => {
@@ -2523,8 +2557,9 @@ function ProductMediaCarousel({
       loadingFullImagesRef.current = true
       fetchProductImages(product.id)
         .then((fullImages) => {
-          if (Array.isArray(fullImages) && fullImages.length > images.length) {
-            setLoadedImages(fullImages)
+          const nextImages = getProductImageList(fullImages)
+          if (nextImages.length > images.length) {
+            setLoadedImages(nextImages)
           }
         })
         .finally(() => {
@@ -2556,12 +2591,13 @@ function ProductMediaCarousel({
       swipedRef.current = false
       return
     }
-    const hydratedProduct = images.length > initialImages.length ? { ...product, images } : product
+    const hydratedProduct = normalizeProductImages(images.length > initialImages.length ? { ...product, images } : product)
     if (isMobile) {
-      onOpenQuickView(hydratedProduct)
+      if (typeof onOpenQuickView === 'function') onOpenQuickView(hydratedProduct)
       return
     }
-    onOpenGallery(hydratedProduct, imageIndex)
+    if (typeof onOpenGallery === 'function') onOpenGallery(hydratedProduct, imageIndex)
+    else if (typeof onOpenQuickView === 'function') onOpenQuickView(hydratedProduct)
   }
 
   return (
@@ -3403,7 +3439,7 @@ function ProductQuickView({
   const touchStartX = useRef(0)
   const detailPanelRef = useRef(null)
   const autoScrollRef = useRef(null)
-  const images = product?.images || []
+  const images = getProductImageList(product)
   const current = product ? selectedConfig[product.id] || { size: '', quantity: 0 } : { size: '', quantity: 0 }
   const activeSize = current.size
   const stockForSelected = product ? Number(product.stock?.[activeSize] || 0) : 0
@@ -3605,7 +3641,9 @@ function ProductQuickView({
                 <button
                   key={image + idx}
                   type="button"
-                  onClick={() => onOpenGallery(product, imageIndex)}
+                  onClick={() => {
+                    if (typeof onOpenGallery === 'function') onOpenGallery(normalizeProductImages(product), imageIndex)
+                  }}
                   style={{ width: '100%', height: '100%', flex: '0 0 100%', border: 'none', padding: 0, background: 'transparent', cursor: 'zoom-in' }}
                 >
                   <img src={image} alt={product.name} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -6655,18 +6693,20 @@ function StoreView({
 
   const loadFullProductImages = useCallback((product, afterLoad) => {
     if (!product?.id || !fetchProductImages) return
-    if (Array.isArray(product.images) && product.images.length > 1) return
+    if (getProductImageList(product).length > 1) return
 
     fetchProductImages(product.id).then((images) => {
-      if (!Array.isArray(images) || images.length <= 1) return
-      afterLoad({ ...product, images })
+      const nextImages = getProductImageList(images)
+      if (nextImages.length <= 1) return
+      afterLoad(normalizeProductImages({ ...product, images: nextImages }))
     })
   }, [fetchProductImages])
 
   const openQuickViewProduct = useCallback((product) => {
     if (!product) return
-    setQuickViewProduct(product)
-    loadFullProductImages(product, (hydratedProduct) => {
+    const safeProduct = normalizeProductImages(product)
+    setQuickViewProduct(safeProduct)
+    loadFullProductImages(safeProduct, (hydratedProduct) => {
       setQuickViewProduct((current) =>
         current && String(current.id) === String(hydratedProduct.id)
           ? hydratedProduct
@@ -6677,12 +6717,17 @@ function StoreView({
 
   const openGalleryProduct = useCallback((product, imageIndex = 0) => {
     if (!product) return
+    const safeProduct = normalizeProductImages(product)
+    const safeImages = getProductImageList(safeProduct)
+    const safeIndex = safeImages.length
+      ? Math.min(Math.max(Number(imageIndex || 0), 0), safeImages.length - 1)
+      : 0
     setGallery({
       open: true,
-      product,
-      imageIndex,
+      product: safeProduct,
+      imageIndex: safeIndex,
     })
-    loadFullProductImages(product, (hydratedProduct) => {
+    loadFullProductImages(safeProduct, (hydratedProduct) => {
       setGallery((current) =>
         current.open && current.product && String(current.product.id) === String(hydratedProduct.id)
           ? { ...current, product: hydratedProduct }
