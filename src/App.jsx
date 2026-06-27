@@ -3485,6 +3485,14 @@ function ProductQuickView({
     if (detailMode === 'package' && !hasPackageStock && hasSizeStock) setDetailMode('sizes')
   }, [open, product, detailMode, hasSizeStock, hasPackageStock])
 
+  const packageSizeOptions = useMemo(() => {
+    if (!product) return []
+    const counts = buildPackageSelectionStock(product, packageQty)
+    return [...counts.entries()].map(([size, qty]) => ({ size, max: Number(qty || 0) }))
+  }, [product, packageQty])
+
+  const selectedPackagePieces = countsTotal(packageSelection)
+
   if (!open || !product) return null
 
   const goTo = (nextIndex) => {
@@ -3534,14 +3542,6 @@ function ProductQuickView({
       onClose()
     }
   }
-
-  const packageSizeOptions = useMemo(() => {
-    if (!product) return []
-    const counts = buildPackageSelectionStock(product, packageQty)
-    return [...counts.entries()].map(([size, qty]) => ({ size, max: Number(qty || 0) }))
-  }, [product, packageQty])
-
-  const selectedPackagePieces = countsTotal(packageSelection)
 
   const updatePackageSelection = (size, qty) => {
     const option = packageSizeOptions.find((entry) => entry.size === size)
