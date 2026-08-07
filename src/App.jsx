@@ -38,6 +38,7 @@ const ADMIN_SESSION_KEY = 'apartados_admin_session_v2'
 const SPECIAL_CLIENT_SESSION_KEY = 'denimclick_special_client_v2'
 const CART_STORAGE_KEY = 'denimclick_cart_v2'
 const PRODUCTS_CACHE_KEY = 'denimclick_products_cache_v5'
+const PRODUCT_TIER_PRICES_CACHE_KEY = 'denimclick_product_tier_prices_cache_v2'
 const SPECIAL_PRICE_RULES_STORAGE_KEY = 'denimclick_special_price_rules_v5'
 const PRODUCT_PAGE_SIZE_DESKTOP = 24
 const PRODUCT_PAGE_SIZE_MOBILE = 12
@@ -376,6 +377,38 @@ function uniqueValues(items) {
   return [...new Set(items.filter(Boolean))]
 }
 
+function uniqueNormalizedValues(items, normalize = (value) => String(value || '').trim().toLowerCase()) {
+  const seen = new Set()
+  return (items || []).reduce((values, item) => {
+    const value = String(item || '').trim()
+    if (!value) return values
+    const key = normalize(value)
+    if (seen.has(key)) return values
+    seen.add(key)
+    values.push(value)
+    return values
+  }, [])
+}
+
+function readStorageArray(key) {
+  if (typeof window === 'undefined') return []
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function writeStorageArray(key, value) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(key, JSON.stringify(Array.isArray(value) ? value : []))
+  } catch {
+    // Ignore storage quota issues.
+  }
+}
+
 function productHasVisibleStock(product) {
   return product?.active !== false && (totalStock(product.stock) > 0 || Number(product.package_stock || 0) > 0)
 }
@@ -579,13 +612,14 @@ function getSpecialTierPrice(product, tierName, productTierPrices, rules = SPECI
 
 function getFitsForAudience(products, audience, customFits = [], options = {}) {
   const onlyWithStock = options.onlyWithStock !== false
-  const audienceFits = uniqueValues(
+  const audienceFits = uniqueNormalizedValues(
     products
       .filter((product) => product.category === 'Jeans')
       .filter((product) => product.active !== false)
       .filter((product) => audience === 'Todo' || product.audience === audience)
       .filter((product) => !onlyWithStock || totalStock(product.stock) > 0)
-      .map((product) => product.subcategory)
+      .map((product) => product.subcategory),
+    normalizeRuleText
   )
 
   const baseFits = onlyWithStock
@@ -596,7 +630,7 @@ function getFitsForAudience(products, audience, customFits = [], options = {}) {
         ? ['Skinny', 'Slim', 'Straight', 'Baggy', ...audienceFits]
         : [...JEANS_FITS, ...audienceFits]
 
-  return uniqueValues([...baseFits, ...(onlyWithStock ? [] : customFits)]).filter(Boolean)
+  return uniqueNormalizedValues([...baseFits, ...(onlyWithStock ? [] : customFits)], normalizeRuleText).filter(Boolean)
 }
 
 function getOrderStatusMeta(status) {
@@ -951,6 +985,7 @@ function rowHasKnownSingleImage(row, images = []) {
 }
 
 function isLastUnitsProduct(product) {
+  if (product?.last_units === true) return true
   if (Number(product?.package_stock || 0) > 0) return false
   const stockEntries = Object.entries(product?.stock || {}).filter(([, qty]) => Number(qty || 0) > 0)
   const loosePieces = totalStock(product?.stock)
@@ -1036,6 +1071,7 @@ function composeProductDescription(product) {
     promo_discount_percent: Number(product.promo_discount_percent || 0),
     promo_free_shipping: product.promo_free_shipping === true,
     promo_terms: product.promo_terms || '',
+    last_units: product.last_units === true,
   }
 
   const hasMeta =
@@ -1054,7 +1090,8 @@ function composeProductDescription(product) {
     Boolean(meta.promotion_note) ||
     meta.promo_discount_percent > 0 ||
     meta.promo_free_shipping === true ||
-    Boolean(meta.promo_terms)
+    Boolean(meta.promo_terms) ||
+    meta.last_units === true
 
   if (!hasMeta) return cleanDescription
   return (cleanDescription ? cleanDescription + '\n\n' : '') + PRODUCT_META_MARKER + JSON.stringify(meta)
@@ -1108,6 +1145,45 @@ function getCartItemStockMap(item, quantity = Number(item?.quantity || 0)) {
   }
   if (!item.packageMode && item.size) return { [item.size]: Number(quantity || 0) }
   return {}
+}
+
+function getCartItemSplit(item) {
+  if (item?.packageMode && countsTotal(item.immediateStock) > 0) {
+    const totalPieces = getCartItemPieces(item)
+    const immediatePieces = Math.max(0, Math.min(countsTotal(item.immediateStock), totalPieces))
+    const apartadoPieces = Math.max(0, totalPieces - immediatePieces)
+    return {
+      totalQuantity: totalPieces,
+      immediateQuantity: immediatePieces,
+      apartadoQuantity: apartadoPieces,
+      immediatePieces,
+      apartadoPieces,
+      packageSizeSplit: true,
+    }
+  }
+
+  const totalQuantity = Math.max(0, Number(item?.quantity || 0))
+  const immediateQuantity = Math.max(0, Math.min(Number(item?.immediateQuantity || 0), totalQuantity))
+  const apartadoQuantity = Math.max(0, totalQuantity - immediateQuantity)
+  const piecesPerQuantity = item?.packageMode ? getPackagePieces(item.product) : 1
+  return {
+    totalQuantity,
+    immediateQuantity,
+    apartadoQuantity,
+    immediatePieces: immediateQuantity * piecesPerQuantity,
+    apartadoPieces: apartadoQuantity * piecesPerQuantity,
+  }
+}
+
+function describeCartItemSplit(item, quantity) {
+  const cleanQuantity = Math.max(0, Number(quantity || 0))
+  if (item?.packagePartial) {
+    return 'Tallas de paquete: ' + (packageCountsToText(getCartItemStockMap(item, cleanQuantity)) || 'Por confirmar')
+  }
+  if (item?.packageMode) {
+    return 'Paquete cerrado: ' + cleanQuantity + ' paquete(s) x ' + getPackagePieces(item.product) + ' pz | Corrida: ' + (item.packageBreakdown || item.product.package_breakdown || item.product.package_fit || 'Por confirmar')
+  }
+  return 'Talla: ' + (item?.size || '-') + ' | Cantidad: ' + cleanQuantity + ' pz'
 }
 
 function getCartLineTotal(item, getProductUnitPrice) {
@@ -1188,6 +1264,7 @@ function normalizeProduct(row) {
     promo_discount_percent: Number(productMeta.promo_discount_percent || 0),
     promo_free_shipping: productMeta.promo_free_shipping === true,
     promo_terms: productMeta.promo_terms || '',
+    last_units: productMeta.last_units === true,
     price_tier3: publicTier3,
     price_tier10: publicTier10,
     special_price: publicSpecial,
@@ -1315,6 +1392,7 @@ function buildEmptyProduct() {
     active: true,
     is_new: true,
     is_offer: false,
+    last_units: false,
     offer_price: 0,
     offer_duration_days: 0,
     offer_forever: true,
@@ -1502,8 +1580,21 @@ const styles = {
   },
 }
 
+function useCloseOnEscape(open, onClose) {
+  useEffect(() => {
+    if (!open || typeof window === 'undefined') return undefined
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [open, onClose])
+}
+
 function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) {
   const [zoomed, setZoomed] = useState(false)
+
+  useCloseOnEscape(open, onClose)
 
   useEffect(() => {
     if (open) setZoomed(false)
@@ -1528,6 +1619,7 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
 
   return (
     <div
+      onClick={onClose}
       style={{
         position: 'fixed',
         inset: 0,
@@ -1560,7 +1652,7 @@ function ProductLightbox({ open, product, imageIndex, setImageIndex, onClose }) 
         <X size={24} />
       </button>
 
-      <div style={{ width: '100%', maxWidth: 1040 }}>
+      <div onClick={(event) => event.stopPropagation()} style={{ width: '100%', maxWidth: 1040 }}>
         <div style={{ color: '#fff', marginBottom: 12, display: 'flex', justifyContent: 'space-between', gap: 12 }}>
           <strong>{product.name}</strong>
           <span>{safeImageIndex + 1} / {images.length || 1}</span>
@@ -1690,6 +1782,8 @@ function ScannerModal({ open, onClose, onDetected }) {
   const sameCountRef = useRef(0)
   const warmupTimeoutRef = useRef(null)
   const readyRef = useRef(false)
+
+  useCloseOnEscape(open, onClose)
 
   useEffect(() => {
     if (!open) return
@@ -1839,6 +1933,7 @@ function ScannerModal({ open, onClose, onDetected }) {
 
   return (
     <div
+      onClick={onClose}
       style={{
         position: 'fixed',
         inset: 0,
@@ -1849,7 +1944,7 @@ function ScannerModal({ open, onClose, onDetected }) {
         padding: 18,
       }}
     >
-      <div style={{ ...styles.card, width: '100%', maxWidth: 620, padding: 18 }}>
+      <div onClick={(event) => event.stopPropagation()} style={{ ...styles.card, width: '100%', maxWidth: 620, padding: 18 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 26 }}>Escanear código</h3>
@@ -1976,6 +2071,8 @@ function LoginClientModal({
 }) {
   const [scannerOpen, setScannerOpen] = useState(false)
 
+  useCloseOnEscape(open, onClose)
+
   const handleLoginValue = async (value) => {
     const client = await loginSpecialClient(value)
     if (client) {
@@ -1989,6 +2086,7 @@ function LoginClientModal({
   return (
     <>
       <div
+        onClick={onClose}
         style={{
           position: 'fixed',
           inset: 0,
@@ -1999,7 +2097,7 @@ function LoginClientModal({
           padding: 18,
         }}
       >
-        <div style={{ ...styles.card, width: '100%', maxWidth: 560, padding: 24 }}>
+        <div onClick={(event) => event.stopPropagation()} style={{ ...styles.card, width: '100%', maxWidth: 560, padding: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
             <div>
               <h3 style={{ margin: 0, fontSize: 30 }}>Inicia sesión</h3>
@@ -2181,6 +2279,28 @@ function DesktopMegaMenu({
                     {fit}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStoreAudience(activeAudience)
+                    setStoreCategory('Jeans')
+                    setStoreFit('Todos')
+                    setStoreBrand('Todas')
+                    closeMenu()
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: '#fff',
+                    textAlign: 'left',
+                    cursor: 'pointer',
+                    padding: '6px 0 0',
+                    fontSize: 16,
+                    fontWeight: 900,
+                  }}
+                >
+                  Ver todo
+                </button>
               </div>
             </div>
           )}
@@ -2269,6 +2389,8 @@ function MobileMenu({
     }
   }, [open])
 
+  useCloseOnEscape(open, close)
+
   if (!open) return null
 
   const availableAudiences = getStoreAudiences(products)
@@ -2281,8 +2403,9 @@ function MobileMenu({
   const fits = getFitsForAudience(products.filter(productHasVisibleStock), selectedAudience, customFits)
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 50 }}>
+    <div onClick={close} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 50 }}>
       <div
+        onClick={(event) => event.stopPropagation()}
         style={{
           width: '86%',
           maxWidth: 430,
@@ -2471,6 +2594,28 @@ function MobileMenu({
                   {fit}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setStoreAudience(selectedAudience)
+                  setStoreCategory(selectedCategory || 'Jeans')
+                  setStoreFit('Todos')
+                  setStoreBrand('Todas')
+                  close()
+                }}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: '#fff',
+                  fontSize: 22,
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  padding: '4px 0 0',
+                  fontWeight: 900,
+                }}
+              >
+                Ver todo
+              </button>
             </>
           )}
 
@@ -3083,8 +3228,9 @@ function ProductCard({
                     borderRadius: 999,
                     padding: '7px 10px',
                     fontSize: 11,
-                    background: selectPackageSizes ? '#111315' : '#fff',
-                    color: selectPackageSizes ? '#fff' : '#111315',
+                    borderColor: '#2563eb',
+                    background: selectPackageSizes ? '#2563eb' : '#eff6ff',
+                    color: selectPackageSizes ? '#fff' : '#1d4ed8',
                   }}
                 >
                   Seleccionar tallas
@@ -3112,7 +3258,7 @@ function ProductCard({
                       </div>
                     ))}
                     <p style={{ margin: 0, color: '#6b7280', fontSize: 12, fontWeight: 800 }}>
-                      Seleccionadas: {selectedPackagePieces} pz. El resto vuelve a tallas.
+                      Seleccionadas: {selectedPackagePieces} pz. En la bolsa puedes mandar tallas inmediato y dejar el resto apartado.
                     </p>
                   </div>
                 ) : (
@@ -3250,8 +3396,9 @@ function ProductCard({
                   style={{
                     ...styles.buttonSecondary,
                     justifySelf: 'start',
-                    background: selectPackageSizes ? '#111315' : '#fff',
-                    color: selectPackageSizes ? '#fff' : '#111315',
+                    borderColor: '#2563eb',
+                    background: selectPackageSizes ? '#2563eb' : '#eff6ff',
+                    color: selectPackageSizes ? '#fff' : '#1d4ed8',
                   }}
                 >
                   Seleccionar tallas
@@ -3275,7 +3422,7 @@ function ProductCard({
                       ))}
                     </div>
                     <p style={{ margin: 0, color: '#6b7280', fontSize: 13, fontWeight: 800 }}>
-                      Seleccionadas: {selectedPackagePieces} pz. El resto del paquete se suma a tallas.
+                      Seleccionadas: {selectedPackagePieces} pz. En la bolsa puedes mandar tallas inmediato y dejar el resto apartado.
                     </p>
                   </div>
                 ) : (
@@ -3456,6 +3603,8 @@ function ProductQuickView({
   const isCompletelyOut = !hasSizeStock && !hasPackageStock
   const packageUnitPrice = product ? (specialPriceUnlocked ? Number(getCartUnitPrice?.(product) || getPackageUnitPrice(product)) : getPackageUnitPrice(product)) : 0
   const [detailMode, setDetailMode] = useState('sizes')
+
+  useCloseOnEscape(open, onClose)
 
   useEffect(() => {
     if (!open || !product) return
@@ -3839,8 +3988,9 @@ function ProductQuickView({
                 style={{
                   ...styles.buttonSecondary,
                   justifySelf: 'start',
-                  background: selectPackageSizes ? '#111315' : '#fff',
-                  color: selectPackageSizes ? '#fff' : '#111315',
+                  borderColor: '#2563eb',
+                  background: selectPackageSizes ? '#2563eb' : '#eff6ff',
+                  color: selectPackageSizes ? '#fff' : '#1d4ed8',
                 }}
               >
                 Seleccionar tallas
@@ -3864,7 +4014,7 @@ function ProductQuickView({
                     ))}
                   </div>
                   <p style={{ margin: 0, color: '#6b7280', fontSize: 13, fontWeight: 800 }}>
-                    Seleccionadas: {selectedPackagePieces} pz. El resto del paquete se suma a tallas.
+                    Seleccionadas: {selectedPackagePieces} pz. En la bolsa puedes mandar tallas inmediato y dejar el resto apartado.
                   </p>
                 </div>
               ) : (
@@ -3967,6 +4117,9 @@ function CartDrawer({
   getCartUnitPrice,
 }) {
   const [policyOpen, setPolicyOpen] = useState(false)
+
+  useCloseOnEscape(open, onClose)
+  useCloseOnEscape(policyOpen, () => setPolicyOpen(false))
   const totalPieces = useMemo(() => getCartTotalPieces(cart), [cart])
 
   const subtotal = useMemo(() => getCartSubtotal(cart, getCartUnitPrice), [cart, getCartUnitPrice])
@@ -4033,6 +4186,54 @@ function CartDrawer({
       return
     }
     setCart((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const updateImmediateQty = (index, nextQty) => {
+    setCart((prev) => {
+      const next = [...prev]
+      const item = next[index]
+      if (!item) return prev
+      const max = Math.max(0, Number(item.quantity || 0))
+      const clean = Math.max(0, Math.min(Number(nextQty || 0), max))
+      next[index] = { ...item, immediateQuantity: clean, immediateStock: {}, selectImmediateStock: false }
+      return next
+    })
+  }
+
+  const togglePackageImmediateStock = (index) => {
+    setCart((prev) => {
+      const next = [...prev]
+      const item = next[index]
+      if (!item?.packageMode) return prev
+      const isOpen = item.selectImmediateStock === true
+      next[index] = {
+        ...item,
+        selectImmediateStock: !isOpen,
+        immediateStock: isOpen ? {} : item.immediateStock || {},
+        immediateQuantity: 0,
+      }
+      return next
+    })
+  }
+
+  const updatePackageImmediateStock = (index, size, qty) => {
+    setCart((prev) => {
+      const next = [...prev]
+      const item = next[index]
+      if (!item?.packageMode) return prev
+      const max = Number(buildPackageSelectionStock(item.product, item.quantity).get(size) || 0)
+      const clean = Math.max(0, Math.min(Number(qty || 0), max))
+      const immediateStock = { ...(item.immediateStock || {}) }
+      if (clean > 0) immediateStock[size] = clean
+      else delete immediateStock[size]
+      next[index] = {
+        ...item,
+        selectImmediateStock: true,
+        immediateStock,
+        immediateQuantity: countsTotal(immediateStock),
+      }
+      return next
+    })
   }
 
   const registeredClientActive = Boolean(specialClientSession?.active)
@@ -4149,6 +4350,11 @@ function CartDrawer({
                   const unit = getCartItemUnitPrice(item, getCartUnitPrice)
                   const lineTotal = getCartLineTotal(item, getCartUnitPrice)
                   const stock = getCartItemMaxQuantity(item)
+                  const split = getCartItemSplit(item)
+                  const immediateLabel = split.packageSizeSplit ? 'pieza(s)' : item.packageMode ? 'paquete(s)' : 'pieza(s)'
+                  const packageImmediateOptions = item.packageMode
+                    ? [...buildPackageSelectionStock(item.product, item.quantity).entries()].map(([size, max]) => ({ size, max }))
+                    : []
 
                   return (
                     <article
@@ -4238,6 +4444,62 @@ function CartDrawer({
                             Paquete completo: {mxn(unit * getPackagePieces(item.product))}
                           </p>
                         ) : null}
+
+                        <div style={{ marginTop: 12, border: '1px solid #bfdbfe', background: '#eff6ff', borderRadius: 14, padding: 10, display: 'grid', gap: 8 }}>
+                          {!item.packageMode || !item.selectImmediateStock ? (
+                            <label style={{ display: 'grid', gap: 6, color: '#1d4ed8', fontSize: 13, fontWeight: 900 }}>
+                              Entrega inmediata
+                              <input
+                                type="number"
+                                min="0"
+                                max={item.quantity}
+                                value={split.packageSizeSplit ? 0 : split.immediateQuantity}
+                                onChange={(event) => updateImmediateQty(index, event.target.value)}
+                                style={{ ...styles.input, padding: '9px 10px', textAlign: 'center', background: '#fff' }}
+                              />
+                            </label>
+                          ) : null}
+                          {item.packageMode ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => togglePackageImmediateStock(index)}
+                                style={{
+                                  ...styles.buttonSecondary,
+                                  borderRadius: 999,
+                                  padding: '8px 10px',
+                                  borderColor: '#2563eb',
+                                  background: item.selectImmediateStock ? '#2563eb' : '#fff',
+                                  color: item.selectImmediateStock ? '#fff' : '#1d4ed8',
+                                  fontSize: 12,
+                                }}
+                              >
+                                Seleccionar tallas para entrega inmediata
+                              </button>
+                              {item.selectImmediateStock ? (
+                                <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
+                                  {packageImmediateOptions.map(({ size, max }) => (
+                                    <label key={size} style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 900, color: '#1f2937' }}>
+                                      {size} <span style={{ color: '#6b7280' }}>max {max}</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max={max}
+                                        value={item.immediateStock?.[size] || ''}
+                                        onChange={(event) => updatePackageImmediateStock(index, size, event.target.value)}
+                                        placeholder="0"
+                                        style={{ ...styles.input, padding: '8px 9px', textAlign: 'center', background: '#fff' }}
+                                      />
+                                    </label>
+                                  ))}
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
+                          <p style={{ margin: 0, color: '#374151', fontSize: 12, lineHeight: 1.35 }}>
+                            Ahora: {split.immediateQuantity} {immediateLabel}. Apartado: {split.apartadoQuantity} {immediateLabel}.
+                          </p>
+                        </div>
                       </div>
                     </article>
                   )
@@ -4389,7 +4651,7 @@ function CartDrawer({
           role="dialog"
           aria-modal="true"
           aria-label="Condiciones del apartado"
-          onClick={(event) => event.stopPropagation()}
+          onClick={() => setPolicyOpen(false)}
           style={{
             position: 'fixed',
             inset: 0,
@@ -4401,6 +4663,7 @@ function CartDrawer({
           }}
         >
           <div
+            onClick={(event) => event.stopPropagation()}
             style={{
               width: 'min(520px, 100%)',
               background: '#fff',
@@ -4892,11 +5155,12 @@ function ProductForm({ draft, setDraft, onSave, onCancel, loading, saveLabel, pr
         ))}
       </div>
 
-      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr' }}>
+      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(4, 1fr)' }}>
         {[
           ['Activo', 'active'],
           ['Nuevo', 'is_new'],
           ['Oferta visible', 'is_offer'],
+          ['Ultimas piezas', 'last_units'],
         ].map(([label, key]) => (
           <label key={key} style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <input type="checkbox" checked={draft[key]} onChange={(e) => setDraft((p) => ({ ...p, [key]: e.target.checked }))} />
@@ -6177,6 +6441,8 @@ function OrderStatusLookup({ specialClientSession, isMobile, variant = 'section'
   const [takeQuantities, setTakeQuantities] = useState({})
   const [immediateLoading, setImmediateLoading] = useState(false)
 
+  useCloseOnEscape(variant === 'modal' && open, onClose)
+
   useEffect(() => {
     if (activeClient && specialPhone) setQuery(specialPhone)
     if (!activeClient && initialQuery) setQuery(initialQuery)
@@ -6610,6 +6876,7 @@ function StoreView({
   const [heroVideoReady, setHeroVideoReady] = useState(false)
   const featuredResumeRef = useRef(null)
   const featuredTouchRef = useRef(null)
+  const overlayHistoryRef = useRef(false)
 
   useEffect(() => {
     if (specialClientSession?.active) setLoginOpen(false)
@@ -6656,23 +6923,26 @@ function StoreView({
   }, [products, storeAudience, storeCategory, storeBrand])
   const activeProducts = useMemo(() => products.filter(productHasVisibleStock), [products])
   const featuredProducts = useMemo(() => activeProducts.filter((p) => getCover(p)), [activeProducts])
+  const newestProducts = useMemo(() => {
+    return [...featuredProducts]
+      .filter((product) => product.is_new && !isLastUnitsProduct(product))
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+  }, [featuredProducts])
   const heroProduct = useMemo(() => {
     return [...featuredProducts].sort((a, b) => Number(b.sales_count || 0) - Number(a.sales_count || 0) || new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0]
   }, [featuredProducts])
   const promoProducts = useMemo(() => activeProducts.filter((p) => p.is_offer && getCover(p)), [activeProducts])
   const offerProduct = promoProducts.length ? promoProducts[promoIndex % promoProducts.length] : heroProduct
   const homeHeroProduct = offerProduct || heroProduct
-  const topRequestedProducts = useMemo(() => {
-    return [...featuredProducts]
-      .sort((a, b) => Number(b.sales_count || 0) - Number(a.sales_count || 0) || new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
-      .slice(0, 10)
-  }, [featuredProducts])
-  const topProducts = useMemo(() => {
-    const selected = new Map()
-    topRequestedProducts.forEach((product) => selected.set(String(product.id), product))
-    promoProducts.forEach((product) => selected.set(String(product.id), product))
-    return Array.from(selected.values())
-  }, [promoProducts, topRequestedProducts])
+  const topProducts = useMemo(() => newestProducts.slice(0, 10), [newestProducts])
+  const outfitCategories = useMemo(() => {
+    return ['Playeras', 'Chamarras', 'Jeans', 'Sudaderas']
+      .map((category) => ({
+        category,
+        product: newestProducts.find((product) => product.category === category),
+      }))
+      .filter((item) => item.product)
+  }, [newestProducts])
   const totalPieces = useMemo(() => getCartTotalPieces(cart), [cart])
   
   const firstClientName = specialClientSession?.name
@@ -6757,6 +7027,18 @@ function StoreView({
     setLoginOpen(true)
   }
 
+  const openCatalogCategory = (category, audience = 'Todo') => {
+    setShowHomeCatalog(true)
+    setStoreAudience(audience)
+    setStoreCategory(category)
+    setStoreFit('Todos')
+    setStoreBrand('Todas')
+    setSearch('')
+    setOpenMegaMenu(false)
+    setMobileMenuOpen(false)
+    window.setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 0)
+  }
+
   const filteredProducts = useMemo(() => {
     let list = [...products].filter(productHasVisibleStock)
 
@@ -6786,9 +7068,9 @@ function StoreView({
       const bTailCatalog = !lastUnitsFilterActive && isLastUnitsProduct(b)
       if (aTailCatalog !== bTailCatalog) return aTailCatalog ? 1 : -1
 
-      const aPriority = (a.is_offer ? 2000000 : 0) + (a.is_new ? 1000000 : 0) + Number(a.sales_count || 0) * 1000 + new Date(a.created_at || 0).getTime()
-      const bPriority = (b.is_offer ? 2000000 : 0) + (b.is_new ? 1000000 : 0) + Number(b.sales_count || 0) * 1000 + new Date(b.created_at || 0).getTime()
-      return bPriority - aPriority
+      if (Boolean(a.is_offer) !== Boolean(b.is_offer)) return a.is_offer ? -1 : 1
+      if (Boolean(a.is_new) !== Boolean(b.is_new)) return a.is_new ? -1 : 1
+      return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
     })
 
     return list
@@ -6926,6 +7208,58 @@ function StoreView({
     setShowHomeCatalog(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
+
+  const closeTopOverlay = useCallback(() => {
+    if (gallery.open) {
+      setGallery({ open: false, product: null, imageIndex: 0 })
+      return
+    }
+    if (quickViewProduct) {
+      setQuickViewProduct(null)
+      return
+    }
+    if (bagOpen) {
+      setBagOpen(false)
+      return
+    }
+    if (orderStatusOpen) {
+      setOrderStatusOpen(false)
+      return
+    }
+    if (loginOpen) {
+      setLoginOpen(false)
+      return
+    }
+    if (mobileMenuOpen) {
+      setMobileMenuOpen(false)
+      return
+    }
+    if (helpMenuOpen) setHelpMenuOpen(false)
+  }, [bagOpen, gallery.open, helpMenuOpen, loginOpen, mobileMenuOpen, orderStatusOpen, quickViewProduct, setGallery])
+
+  const overlayOpen = Boolean(gallery.open || quickViewProduct || bagOpen || orderStatusOpen || loginOpen || mobileMenuOpen || helpMenuOpen)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const handlePopState = () => {
+      if (!overlayHistoryRef.current) return
+      overlayHistoryRef.current = false
+      closeTopOverlay()
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [closeTopOverlay])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (!overlayOpen) {
+      overlayHistoryRef.current = false
+      return
+    }
+    if (overlayHistoryRef.current) return
+    overlayHistoryRef.current = true
+    window.history.pushState({ denimClickOverlay: true }, '', window.location.href)
+  }, [overlayOpen])
 
   return (
     <>
@@ -7237,8 +7571,7 @@ function StoreView({
                         setStoreCategory('Todos')
                         setStoreBrand('Todas')
                         setStoreFit('Todos')
-                        setStoreQuality('Todas')
-                        setStoreSearch('')
+                        setSearch('')
                         window.setTimeout(() => document.getElementById('catalogo')?.scrollIntoView({ behavior: 'smooth' }), 0)
                       }}
                       style={{ ...styles.buttonSecondary, background: 'transparent', color: '#fff', border: '1px solid rgba(255,255,255,.38)', borderRadius: 999 }}
@@ -7252,11 +7585,66 @@ function StoreView({
             </div>
           </section>
 
+          {outfitCategories.length ? (
+            <section style={{ padding: isMobile ? '28px 0 18px' : '42px 0 24px', background: '#f7f4ef' }}>
+              <div style={styles.container}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'end', marginBottom: 16 }}>
+                  <div>
+                    <p style={{ margin: 0, color: '#9a6b16', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' }}>Categorias</p>
+                    <h2 style={{ margin: '6px 0 0', fontSize: isMobile ? 30 : 42 }}>Completa tu outfit</h2>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))',
+                    gap: isMobile ? 10 : 18,
+                  }}
+                >
+                  {outfitCategories.map(({ category, product }) => (
+                    <article key={category} style={{ background: '#fff', border: '1px solid #e5dfd4', borderRadius: 8, overflow: 'hidden' }}>
+                      <button
+                        type="button"
+                        onClick={() => openCatalogCategory(category, 'Todo')}
+                        style={{ border: 'none', padding: 0, background: '#ebe6dc', width: '100%', cursor: 'pointer', display: 'block', aspectRatio: isMobile ? '4 / 4.7' : '4 / 5' }}
+                      >
+                        <img
+                          src={getCover(product)}
+                          alt={category}
+                          loading="lazy"
+                          decoding="async"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      </button>
+                      <div style={{ padding: isMobile ? 10 : 14, display: 'grid', gap: 10 }}>
+                        <button
+                          type="button"
+                          onClick={() => openCatalogCategory(category, 'Todo')}
+                          style={{ border: 'none', background: 'transparent', padding: 0, textAlign: 'left', cursor: 'pointer' }}
+                        >
+                          <h3 style={{ margin: 0, fontSize: isMobile ? 17 : 22, lineHeight: 1.08 }}>{category}</h3>
+                        </button>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button type="button" onClick={() => openCatalogCategory(category, 'Hombre')} style={{ ...styles.buttonSecondary, borderRadius: 999, padding: isMobile ? '8px 10px' : '9px 12px', fontSize: 12 }}>
+                            Hombre
+                          </button>
+                          <button type="button" onClick={() => openCatalogCategory(category, 'Dama')} style={{ ...styles.buttonSecondary, borderRadius: 999, padding: isMobile ? '8px 10px' : '9px 12px', fontSize: 12 }}>
+                            Mujer
+                          </button>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
           <section style={{ padding: isMobile ? '10px 0 28px' : '18px 0 38px' }}>
             <div style={isMobile ? { maxWidth: 'none', margin: 0, padding: '0 0 0 18px', overflow: 'hidden' } : styles.container}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 14, alignItems: 'end', marginBottom: 16, paddingRight: isMobile ? 18 : 0 }}>
                 <div>
-                  <h2 style={{ margin: '6px 0 0', fontSize: isMobile ? 30 : 42 }}>Productos destacados</h2>
+                  <h2 style={{ margin: '6px 0 0', fontSize: isMobile ? 30 : 42 }}>Productos nuevos</h2>
                 </div>
                 {!isMobile && featuredMaxIndex > 0 ? (
                   <div style={{ display: 'flex', gap: 10 }}>
@@ -8169,7 +8557,7 @@ export default function App() {
   })
   const [specialClients, setSpecialClients] = useState([])
   const [orders, setOrders] = useState([])
-  const [productTierPrices, setProductTierPrices] = useState([])
+  const [productTierPrices, setProductTierPrices] = useState(() => readStorageArray(PRODUCT_TIER_PRICES_CACHE_KEY))
   const [specialPriceRules, setSpecialPriceRules] = useState(() => {
     if (typeof window === 'undefined') return SPECIAL_PRICE_RULE_PRESETS
     try {
@@ -8215,20 +8603,19 @@ export default function App() {
   const productImagesCacheRef = useRef(new Map())
 
   async function fetchProducts() {
-    const { data, error } = await supabase
-      .from('products')
-      .select(PRODUCT_LIST_COLUMNS)
-      .order('created_at', { ascending: false })
-    if (error) {
-      if (!products.length) alert(`No se pudieron leer los productos: ${error.message}`)
-      return
-    }
-    const normalized = (data || []).map(normalizeProduct)
-    setProducts(normalized)
     try {
-      localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify(normalized))
-    } catch {
-      // Keep live data even when browser storage is full.
+      const { data, error } = await supabase
+        .from('products')
+        .select(PRODUCT_LIST_COLUMNS)
+        .order('created_at', { ascending: false })
+      if (error) throw error
+      const normalized = (data || []).map(normalizeProduct)
+      setProducts(normalized)
+      writeStorageArray(PRODUCTS_CACHE_KEY, normalized)
+    } catch (error) {
+      const cachedProducts = readStorageArray(PRODUCTS_CACHE_KEY)
+      if (cachedProducts.length && !products.length) setProducts(cachedProducts)
+      console.warn('No se pudieron leer productos; se conserva cache local:', error?.message || error)
     }
   }
 
@@ -8239,12 +8626,20 @@ export default function App() {
       return productImagesCacheRef.current.get(cacheKey)
     }
 
-    const { data, error } = await supabase
-      .from('products')
-      .select('id,images,images_json')
-      .eq('id', productId)
-      .single()
-    if (error || !data) return []
+    let data = null
+    try {
+      const result = await supabase
+        .from('products')
+        .select('id,images,images_json')
+        .eq('id', productId)
+        .single()
+      if (result.error) throw result.error
+      data = result.data
+    } catch (error) {
+      console.warn('No se pudieron leer fotos del producto:', error?.message || error)
+      return []
+    }
+    if (!data) return []
 
     let images = []
     if (Array.isArray(data.images_json)) {
@@ -8270,13 +8665,16 @@ export default function App() {
 
     if (!ids.length) return
 
-    const { data, error } = await supabase
-      .from('products')
-      .select('id,images,images_json')
-      .in('id', ids)
-
-    if (error) {
-      console.warn('No se pudieron precargar imagenes:', error.message)
+    let data = []
+    try {
+      const result = await supabase
+        .from('products')
+        .select('id,images,images_json')
+        .in('id', ids)
+      if (result.error) throw result.error
+      data = result.data || []
+    } catch (error) {
+      console.warn('No se pudieron precargar imagenes:', error?.message || error)
       return
     }
 
@@ -8308,12 +8706,17 @@ export default function App() {
   }
 
   async function fetchTierPrices() {
-    const { data, error } = await supabase.from('product_customer_prices').select('*')
-    if (error) {
-      alert(`No se pudieron leer precios por categoría: ${error.message}`)
-      return
+    try {
+      const { data, error } = await supabase.from('product_customer_prices').select('*')
+      if (error) throw error
+      const rows = data || []
+      setProductTierPrices(rows)
+      writeStorageArray(PRODUCT_TIER_PRICES_CACHE_KEY, rows)
+    } catch (error) {
+      const cachedRows = readStorageArray(PRODUCT_TIER_PRICES_CACHE_KEY)
+      if (cachedRows.length && !productTierPrices.length) setProductTierPrices(cachedRows)
+      console.warn('No se pudieron leer precios por categoria; se conserva fallback local:', error?.message || error)
     }
-    setProductTierPrices(data || [])
   }
 
   async function fetchOrders() {
@@ -8710,6 +9113,9 @@ export default function App() {
       next[index] = {
         ...currentItem,
         quantity: clean,
+        immediateStock: currentItem.packageMode && clean !== Number(currentItem.quantity || 0) ? {} : currentItem.immediateStock,
+        selectImmediateStock: currentItem.packageMode && clean !== Number(currentItem.quantity || 0) ? false : currentItem.selectImmediateStock,
+        immediateQuantity: currentItem.packageMode && clean !== Number(currentItem.quantity || 0) ? 0 : currentItem.immediateQuantity,
         selectedStock,
         packageBreakdown: currentItem.packagePartial ? packageCountsToText(selectedStock) : currentItem.packageBreakdown,
       }
@@ -8819,24 +9225,33 @@ export default function App() {
           ' | Referencia: ' + (customer.reference || '-')
         : shippingLabel
 
-    const itemRows = cart.map((item) => ({
-      product_id: item.product.id,
-      name: item.product.name,
-      size: item.size,
-      quantity: item.quantity,
-      package_mode: Boolean(item.packageMode),
-      package_partial: Boolean(item.packagePartial),
-      package_pieces: item.packageMode ? getPackagePieces(item.product) : null,
-      source_package_qty: Number(item.sourcePackageQty || 0),
-      selected_stock: item.selectedStock || null,
-      pieces: getCartItemPieces(item),
-      unit_price: getCartItemUnitPrice(item, getCartUnitPrice),
-      total: getCartLineTotal(item, getCartUnitPrice),
-      package_breakdown: item.packageMode || item.packagePartial ? item.packageBreakdown || item.product.package_breakdown || item.product.package_fit || '' : '',
-      quality: item.product.quality || '',
-      model_po: item.product.model_po || '',
-      image: getCover(item.product),
-    }))
+    const itemRows = cart.map((item) => {
+      const split = getCartItemSplit(item)
+      return {
+        product_id: item.product.id,
+        name: item.product.name,
+        size: item.size,
+        quantity: item.quantity,
+        package_mode: Boolean(item.packageMode),
+        package_partial: Boolean(item.packagePartial),
+        package_pieces: item.packageMode ? getPackagePieces(item.product) : null,
+        source_package_qty: Number(item.sourcePackageQty || 0),
+        selected_stock: item.selectedStock || null,
+        immediate_stock: item.immediateStock || null,
+        pieces: getCartItemPieces(item),
+        unit_price: getCartItemUnitPrice(item, getCartUnitPrice),
+        total: getCartLineTotal(item, getCartUnitPrice),
+        immediate_quantity: split.immediateQuantity,
+        apartado_quantity: split.apartadoQuantity,
+        immediate_pieces: split.immediatePieces,
+        apartado_pieces: split.apartadoPieces,
+        package_breakdown: item.packageMode || item.packagePartial ? item.packageBreakdown || item.product.package_breakdown || item.product.package_fit || '' : '',
+        quality: item.product.quality || '',
+        model_po: item.product.model_po || '',
+        image: getCover(item.product),
+      }
+    })
+    const hasImmediateItems = itemRows.some((item) => Number(item.immediate_quantity || 0) > 0)
 
     const noteParts = [
       'Numero pedido: ' + orderNumber,
@@ -8848,6 +9263,7 @@ export default function App() {
       specialClientSession?.active && specialClientSession.client_code
         ? 'Codigo cliente: ' + specialClientSession.client_code
         : '',
+      hasImmediateItems ? 'Solicitud mixta: incluye entrega inmediata y apartado en un solo pedido' : '',
     ].filter(Boolean)
 
     const orderPayload = {
@@ -8864,25 +9280,43 @@ export default function App() {
       whatsapp_sent: true,
     }
 
-    const itemsText = itemRows
+    const buildItemsText = (rows, mode) => rows
       .map((item, idx) => {
-        const detail = item.package_partial
-          ? '   Tallas de paquete: ' + (item.package_breakdown || 'Por confirmar') + '\n' +
-            '   Cantidad: ' + item.quantity + ' pz\n'
+        const quantity = mode === 'immediate' ? Number(item.immediate_quantity || 0) : Number(item.apartado_quantity || 0)
+        if (quantity <= 0) return ''
+        const pieces = mode === 'immediate' ? Number(item.immediate_pieces || 0) : Number(item.apartado_pieces || 0)
+        const sourceCartItem = cart[idx]
+        const packageSizeSplit = sourceCartItem?.packageMode && countsTotal(sourceCartItem.immediateStock) > 0
+        const detail = packageSizeSplit && mode === 'immediate'
+          ? '   Tallas para entrega inmediata: ' + packageCountsToText(sourceCartItem.immediateStock) + '\n'
+          : packageSizeSplit && mode === 'apartado'
+          ? '   Resto del paquete apartado: ' + pieces + ' pz\n' +
+            '   Corrida original: ' + (item.package_breakdown || 'Por confirmar') + '\n'
+          : item.package_partial
+          ? '   ' + describeCartItemSplit(sourceCartItem || item, quantity) + '\n'
           : item.package_mode
-          ? '   Paquete cerrado: ' + item.quantity + ' paquete(s) x ' + item.package_pieces + ' pz\n' +
+          ? '   Paquete cerrado: ' + quantity + ' paquete(s) x ' + item.package_pieces + ' pz\n' +
             '   Corrida: ' + (item.package_breakdown || 'Por confirmar') + '\n'
           : '   Talla: ' + item.size + '\n' +
-            '   Cantidad: ' + item.quantity + ' pz\n'
+            '   Cantidad: ' + quantity + ' pz\n'
+        const lineTotal = Number(item.unit_price || 0) * pieces
 
         return (
           (idx + 1) + '. ' + item.name + '\n' +
           detail +
-          '   Piezas: ' + item.pieces + '\n' +
-          '   Importe: ' + mxn(item.total)
+          '   Piezas: ' + pieces + '\n' +
+          '   Importe: ' + mxn(lineTotal)
         )
       })
+      .filter(Boolean)
       .join('\n\n')
+
+    const immediateText = buildItemsText(itemRows, 'immediate')
+    const apartadoText = buildItemsText(itemRows, 'apartado')
+    const itemsText = [
+      immediateText ? 'ENTREGA INMEDIATA\n' + immediateText : '',
+      apartadoText ? 'APARTADO\n' + apartadoText : '',
+    ].filter(Boolean).join('\n\n')
 
     const shippingText =
       !isRegisteredClient && requestDelivery === 'envios'
