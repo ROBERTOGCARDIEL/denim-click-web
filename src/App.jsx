@@ -1557,7 +1557,8 @@ function shouldUseDemoProducts() {
 }
 
 function mergeDemoProducts(products = []) {
-  if (!shouldUseDemoProducts()) return products
+  const hasVisibleStoreProducts = products.some(productHasVisibleStock)
+  if (!shouldUseDemoProducts() && hasVisibleStoreProducts) return products
   const existingIds = new Set(products.map((product) => String(product.id)))
   return [...products, ...DEMO_PRODUCTS.filter((product) => !existingIds.has(String(product.id)))]
 }
