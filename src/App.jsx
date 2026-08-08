@@ -1418,6 +1418,150 @@ function buildEmptyProduct() {
   }
 }
 
+function demoProductImage(label, bg = '#ece7df', accent = '#111315') {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1125" viewBox="0 0 900 1125">
+      <rect width="900" height="1125" fill="${bg}"/>
+      <rect x="282" y="172" width="336" height="620" rx="62" fill="#fff" opacity=".86"/>
+      <path d="M372 172h156l64 178v442H308V350l64-178Z" fill="${accent}" opacity=".15"/>
+      <path d="M372 172h156l-38 116h-80l-38-116Z" fill="#fff" opacity=".92"/>
+      <rect x="330" y="502" width="240" height="42" rx="21" fill="${accent}" opacity=".16"/>
+      <rect x="360" y="580" width="180" height="34" rx="17" fill="${accent}" opacity=".12"/>
+      <circle cx="450" cy="330" r="18" fill="${accent}" opacity=".30"/>
+      <text x="450" y="946" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="42" font-weight="800" fill="${accent}">${label}</text>
+      <text x="450" y="1002" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="24" fill="${accent}" opacity=".62">Producto de prueba</text>
+    </svg>
+  `
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+}
+
+const DEMO_PRODUCTS = [
+  {
+    id: 'demo-jeans-straight',
+    name: 'Jeans Straight Indigo Demo',
+    category: 'Jeans',
+    subcategory: 'Straight',
+    audience: 'Hombre',
+    brand: 'Denim Click',
+    quality: 'JEANS LINEA',
+    stock: { 28: 3, 30: 5, 32: 4, 34: 2 },
+    images: [demoProductImage('JEANS', '#e9eef3', '#16324f')],
+    price: 489,
+    price_tier3: 389,
+    price_tier10: 289,
+    special_price: 289,
+    package_fit: '1-28 2-30 2-32 1-34',
+    package_breakdown: '1-28 2-30 2-32 1-34',
+    package_stock: 3,
+    package_pieces: 6,
+  },
+  {
+    id: 'demo-playera-basic',
+    name: 'Playera Premium Blanca Demo',
+    category: 'Playeras',
+    subcategory: 'Regular',
+    audience: 'Hombre',
+    brand: 'Denim Click',
+    quality: 'PYP',
+    stock: { CH: 5, M: 7, G: 4, XL: 2 },
+    images: [demoProductImage('PLAYERA', '#f4f1ea', '#3f3f46')],
+    price: 375,
+    price_tier3: 275,
+    price_tier10: 175,
+    special_price: 175,
+  },
+  {
+    id: 'demo-chamarra-denim',
+    name: 'Chamarra Denim Clara Demo',
+    category: 'Chamarras',
+    subcategory: 'Denim',
+    audience: 'Dama',
+    brand: 'Denim Click',
+    quality: 'CHM L',
+    stock: { CH: 2, M: 3, G: 2 },
+    images: [demoProductImage('CHAMARRA', '#e7f0ef', '#0f766e')],
+    price: 725,
+    price_tier3: 625,
+    price_tier10: 525,
+    special_price: 525,
+  },
+  {
+    id: 'demo-sudadera-basic',
+    name: 'Sudadera Relaxed Demo',
+    category: 'Sudaderas',
+    subcategory: 'Relaxed',
+    audience: 'Dama',
+    brand: 'Denim Click',
+    quality: 'SUD',
+    stock: { CH: 4, M: 4, G: 3 },
+    images: [demoProductImage('SUDADERA', '#eee7f2', '#6d28d9')],
+    price: 555,
+    price_tier3: 455,
+    price_tier10: 355,
+    special_price: 355,
+  },
+  {
+    id: 'demo-jeans-skinny',
+    name: 'Jeans Skinny Azul Demo',
+    category: 'Jeans',
+    subcategory: 'Skinny',
+    audience: 'Dama',
+    brand: 'Denim Click',
+    quality: 'JEANS PREMIUM',
+    stock: { 3: 2, 5: 4, 7: 3, 9: 2 },
+    images: [demoProductImage('SKINNY', '#edf2fb', '#1d4ed8')],
+    price: 515,
+    price_tier3: 415,
+    price_tier10: 315,
+    special_price: 315,
+  },
+  {
+    id: 'demo-accesorio-bolsa',
+    name: 'Bolsa Crossbody Demo',
+    category: 'Accesorios',
+    subcategory: 'Bolsa',
+    audience: 'Accesorios',
+    brand: 'Denim Click',
+    quality: 'BOLSAS LINEA',
+    stock: { UNI: 6 },
+    images: [demoProductImage('BOLSA', '#f1eee8', '#92400e')],
+    price: 499,
+    price_tier3: 399,
+    price_tier10: 299,
+    special_price: 299,
+  },
+].map((product, index) => ({
+  ...product,
+  created_at: new Date(Date.now() - index * 3600000).toISOString(),
+  description: 'Producto de prueba local para revisar dimensiones, hover, tallas, paquetes y flujo de apartado sin escribir en Supabase.',
+  sizes: Object.keys(product.stock || {}),
+  active: true,
+  is_new: true,
+  is_offer: index === 1,
+  offer_price: index === 1 ? 249 : 0,
+  sales_count: 10 - index,
+  category_order: 0,
+  lengths: [],
+  model_po: 'DEMO-' + String(index + 1).padStart(2, '0'),
+  stock_total: totalStock(product.stock),
+  price_base: product.price,
+  last_units: false,
+  demo: true,
+}))
+
+function shouldUseDemoProducts() {
+  if (typeof window === 'undefined') return false
+  const host = window.location.hostname
+  const params = new URLSearchParams(window.location.search)
+  return host === 'localhost' || host === '127.0.0.1' || params.has('demo')
+}
+
+function mergeDemoProducts(products = []) {
+  if (!shouldUseDemoProducts()) return products
+  const existingIds = new Set(products.map((product) => String(product.id)))
+  return [...products, ...DEMO_PRODUCTS.filter((product) => !existingIds.has(String(product.id)))]
+}
+
 function currentTier(totalPieces) {
   if (totalPieces >= 10) return { key: 'price_tier10', label: 'Precio 10+ piezas' }
   if (totalPieces >= 3) return { key: 'price_tier3', label: 'Precio 3+ piezas' }
@@ -2737,7 +2881,7 @@ function ProductMediaCarousel({
       return
     }
     const hydratedProduct = normalizeProductImages(images.length > initialImages.length ? { ...product, images } : product)
-    if (isMobile) {
+    if (isMobile || variant === 'card') {
       if (typeof onOpenQuickView === 'function') onOpenQuickView(hydratedProduct)
       return
     }
@@ -2938,23 +3082,6 @@ function ProductMediaCarousel({
         </button>
       ) : null}
 
-      {!isMobile && variant === 'card' ? (
-        <span
-          style={{
-            position: 'absolute',
-            right: 10,
-            bottom: 10,
-            borderRadius: 999,
-            padding: '7px 10px',
-            background: 'rgba(255,255,255,.92)',
-            color: '#111315',
-            fontWeight: 900,
-            fontSize: 12,
-          }}
-        >
-          Ver detalle
-        </span>
-      ) : null}
     </div>
   )
 }
@@ -2974,6 +3101,8 @@ function ProductCard({
   fetchProductImages,
 }) {
   const current = selectedConfig[product.id] || { size: '', quantity: 0 }
+  const [hoveredMedia, setHoveredMedia] = useState(false)
+  const [quickPickerOpen, setQuickPickerOpen] = useState(false)
   const [pickerMode, setPickerMode] = useState('sizes')
   const [packageQty, setPackageQty] = useState(1)
   const [packageBreakdown, setPackageBreakdown] = useState(product.package_breakdown || product.package_fit || '')
@@ -3002,6 +3131,9 @@ function ProductCard({
       ? Number(getCartUnitPrice(product) || product.special_price || visibleTier10Price)
       : visibleTier10Price
   )
+  const availablePiecesText = !isCompletelyOut
+    ? (availableStock + packageStock * getPackagePieces(product)) + ' disponibles'
+    : 'Agotado'
 
   useEffect(() => {
     if (pickerMode === 'sizes' && !hasSizeStock && hasPackageStock) setPickerMode('package')
@@ -3014,6 +3146,7 @@ function ProductCard({
     setSelectPackageSizes(false)
     setPackageSelection({})
     setPackageReady(true)
+    setQuickPickerOpen(false)
   }, [product.id, product.package_breakdown, product.package_fit])
 
   const setPackageQuantity = (qty) => {
@@ -3046,7 +3179,10 @@ function ProductCard({
   const addPackage = () => {
     if (!onAddPackageToCart) return false
     const added = onAddPackageToCart(product, packageQty, packageBreakdown, selectPackageSizes ? packageSelection : null)
-    if (added !== false) setPackageReady(false)
+    if (added !== false) {
+      setPackageReady(false)
+      setQuickPickerOpen(false)
+    }
     return added
   }
 
@@ -3073,16 +3209,249 @@ function ProductCard({
     }))
   }
 
+  const addSizeProduct = () => {
+    const added = onAddToCart(product)
+    if (added !== false) setQuickPickerOpen(false)
+    return added
+  }
+
+  const quickAddPanel = !isMobile && hoveredMedia ? (
+    <div
+      onClick={(event) => event.stopPropagation()}
+      style={{
+        position: 'absolute',
+        left: 12,
+        right: 12,
+        bottom: 12,
+        zIndex: 4,
+        display: 'grid',
+        gap: 8,
+      }}
+    >
+      {!quickPickerOpen ? (
+        <button
+          type="button"
+          onClick={() => {
+            if (isCompletelyOut) return
+            setQuickPickerOpen(true)
+          }}
+          disabled={isCompletelyOut}
+          style={{
+            width: '100%',
+            minHeight: 44,
+            border: 'none',
+            background: isCompletelyOut ? 'rgba(17,19,21,.45)' : '#0b1026',
+            color: '#fff',
+            fontWeight: 950,
+            cursor: isCompletelyOut ? 'not-allowed' : 'pointer',
+            boxShadow: '0 18px 34px rgba(17,19,21,.22)',
+          }}
+        >
+          {isCompletelyOut ? 'Agotado' : 'Agregar al carrito'}
+        </button>
+      ) : (
+        <div
+          style={{
+            background: 'rgba(255,255,255,.97)',
+            color: '#111315',
+            border: '1px solid rgba(17,19,21,.12)',
+            boxShadow: '0 20px 44px rgba(17,19,21,.20)',
+            padding: 12,
+            display: 'grid',
+            gap: 10,
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {[
+                ['sizes', 'Tallas', hasSizeStock],
+                ['package', 'Paquete', hasPackageStock],
+              ].filter(([, , enabled]) => enabled).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setPickerMode(key)}
+                  style={{
+                    border: pickerMode === key ? '1px solid #111315' : '1px solid #d1d5db',
+                    background: pickerMode === key ? '#111315' : '#fff',
+                    color: pickerMode === key ? '#fff' : '#111315',
+                    borderRadius: 999,
+                    padding: '7px 10px',
+                    fontSize: 12,
+                    fontWeight: 900,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              aria-label="Cerrar selector rapido"
+              onClick={() => setQuickPickerOpen(false)}
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', padding: 4 }}
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {pickerMode === 'sizes' && hasSizeStock ? (
+            <>
+              {activeSize && Number(current.quantity || 0) > 0 ? (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                  <strong style={{ fontSize: 13 }}>Talla {activeSize} · {current.quantity} pz</strong>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedConfig((prev) => ({ ...prev, [product.id]: { size: '', quantity: 0 } }))}
+                    style={{ border: 'none', background: 'transparent', color: '#2563eb', cursor: 'pointer', fontWeight: 900, fontSize: 12 }}
+                  >
+                    Cambiar
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {(product.sizes || []).slice(0, 10).map((size) => {
+                      const qty = Number(product.stock?.[size] || 0)
+                      return (
+                        <button
+                          key={size}
+                          type="button"
+                          disabled={qty <= 0}
+                          onClick={() => qty > 0 && setSize(size)}
+                          style={{
+                            minWidth: 44,
+                            minHeight: 36,
+                            border: '1px solid ' + (qty > 0 ? '#111315' : '#d1d5db'),
+                            background: qty > 0 ? '#fff' : '#f3f4f6',
+                            color: qty > 0 ? '#111315' : '#9ca3af',
+                            cursor: qty > 0 ? 'pointer' : 'not-allowed',
+                            fontWeight: 900,
+                          }}
+                        >
+                          {size}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {activeSize ? (
+                    <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d1d5db', width: 126, overflow: 'hidden' }}>
+                      <button type="button" onClick={() => setQuantity((current.quantity || 0) - 1)} style={{ border: 'none', background: '#fff', width: 36, height: 34, cursor: 'pointer' }}><Minus size={14} /></button>
+                      <input type="number" min="0" max={stockForSelected} value={current.quantity} onChange={(event) => setQuantity(event.target.value)} style={{ border: 'none', outline: 'none', width: 54, height: 34, textAlign: 'center', fontWeight: 900 }} />
+                      <button type="button" onClick={() => setQuantity((current.quantity || 0) + 1)} style={{ border: 'none', background: '#fff', width: 36, height: 34, cursor: 'pointer' }}><Plus size={14} /></button>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={addSizeProduct}
+                disabled={!activeSize || Number(current.quantity || 0) <= 0}
+                style={{
+                  width: '100%',
+                  minHeight: 42,
+                  border: 'none',
+                  background: '#0b1026',
+                  color: '#fff',
+                  opacity: !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
+                  cursor: !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer',
+                  fontWeight: 950,
+                }}
+              >
+                Agregar al carrito
+              </button>
+            </>
+          ) : null}
+
+          {pickerMode === 'package' && hasPackageStock ? (
+            <div style={{ display: 'grid', gap: 8 }}>
+              <div style={{ display: 'grid', gap: 5, fontSize: 12 }}>
+                <strong>Paquete cerrado</strong>
+                <span style={{ color: '#6b7280' }}>{product.package_fit || product.package_breakdown || 'Entallado por confirmar'}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d1d5db', overflow: 'hidden' }}>
+                  <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ border: 'none', background: '#fff', width: 34, height: 34, cursor: 'pointer' }}><Minus size={14} /></button>
+                  <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ border: 'none', outline: 'none', width: 46, height: 34, textAlign: 'center', fontWeight: 900 }} />
+                  <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ border: 'none', background: '#fff', width: 34, height: 34, cursor: 'pointer' }}><Plus size={14} /></button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectPackageSizes((value) => !value)
+                    setPackageSelection({})
+                    setPackageReady(true)
+                  }}
+                  style={{
+                    ...styles.buttonSecondary,
+                    borderRadius: 999,
+                    padding: '8px 10px',
+                    borderColor: '#2563eb',
+                    background: selectPackageSizes ? '#2563eb' : '#eff6ff',
+                    color: selectPackageSizes ? '#fff' : '#1d4ed8',
+                    fontSize: 12,
+                  }}
+                >
+                  Seleccionar tallas
+                </button>
+              </div>
+              {selectPackageSizes ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6 }}>
+                  {packageSizeOptions.map(({ size, max }) => (
+                    <label key={size} style={{ display: 'grid', gap: 4, fontSize: 11, fontWeight: 900 }}>
+                      {size}
+                      <input
+                        type="number"
+                        min="0"
+                        max={max}
+                        value={packageSelection[size] || ''}
+                        onChange={(event) => updatePackageSelection(size, event.target.value)}
+                        placeholder={'max ' + max}
+                        style={{ ...styles.input, borderRadius: 4, padding: '7px 8px', textAlign: 'center' }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={addPackage}
+                disabled={!packageReady || (selectPackageSizes && selectedPackagePieces <= 0)}
+                style={{
+                  width: '100%',
+                  minHeight: 42,
+                  border: 'none',
+                  background: '#0b1026',
+                  color: '#fff',
+                  opacity: !packageReady || (selectPackageSizes && selectedPackagePieces <= 0) ? 0.5 : 1,
+                  cursor: !packageReady || (selectPackageSizes && selectedPackagePieces <= 0) ? 'not-allowed' : 'pointer',
+                  fontWeight: 950,
+                }}
+              >
+                Agregar paquete
+              </button>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  ) : null
+
   return (
     <article
       style={{
         ...styles.card,
         overflow: 'hidden',
-        borderRadius: isMobile ? 0 : 8,
+        borderRadius: 8,
         boxShadow: isMobile ? 'none' : styles.card.boxShadow,
-        border: isMobile ? 'none' : styles.card.border,
+        border: isMobile ? '1px solid #e5e7eb' : styles.card.border,
         background: '#fff',
         minWidth: 0,
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
         transition: 'transform 0.25s ease, box-shadow 0.25s ease',
       }}
       onMouseEnter={(event) => {
@@ -3096,17 +3465,31 @@ function ProductCard({
         event.currentTarget.style.boxShadow = styles.card.boxShadow
       }}
     >
-      <ProductMediaCarousel
-        product={product}
-        isMobile={isMobile}
-        onOpenGallery={onOpenGallery}
-        onOpenQuickView={onOpenQuickView}
-        fetchProductImages={fetchProductImages}
-      />
+      <div
+        style={{ position: 'relative' }}
+        onMouseEnter={() => {
+          if (!isMobile) setHoveredMedia(true)
+        }}
+        onMouseLeave={() => {
+          if (!isMobile) {
+            setHoveredMedia(false)
+            setQuickPickerOpen(false)
+          }
+        }}
+      >
+        <ProductMediaCarousel
+          product={product}
+          isMobile={isMobile}
+          onOpenGallery={onOpenGallery}
+          onOpenQuickView={onOpenQuickView}
+          fetchProductImages={fetchProductImages}
+        />
+        {quickAddPanel}
+      </div>
 
-      <div style={{ padding: isMobile ? '11px 0 18px' : 18 }}>
+      <div style={{ padding: isMobile ? 10 : 14, display: 'flex', flexDirection: 'column', gap: isMobile ? 7 : 9, flex: 1, minHeight: isMobile ? 226 : 206 }}>
         {!isMobile ? (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', minHeight: 24, overflow: 'hidden' }}>
             <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
             {product.subcategory ? <Badge bg="#f6f4ef" border="1px solid #e5dfd4">{product.subcategory}</Badge> : null}
             {product.quality ? <Badge bg="#f5f3ff" color="#6d28d9">{product.quality}</Badge> : null}
@@ -3116,13 +3499,13 @@ function ProductCard({
               bg={!isCompletelyOut ? '#ecfdf5' : '#fef2f2'}
               color={!isCompletelyOut ? '#065f46' : '#991b1b'}
             >
-              {!isCompletelyOut ? (availableStock + packageStock * getPackagePieces(product)) + ' disponibles' : 'Agotado'}
+              {availablePiecesText}
             </Badge>
           </div>
         ) : null}
 
         {isMobile ? (
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 7 }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', minHeight: 23, overflow: 'hidden' }}>
             <Badge bg="#fff" border="1px solid #d1d5db">{product.brand}</Badge>
             {product.subcategory ? <Badge bg="#f6f4ef" border="1px solid #e5dfd4">{product.subcategory}</Badge> : null}
             {product.quality ? <Badge bg="#f5f3ff" color="#6d28d9">{product.quality}</Badge> : null}
@@ -3141,375 +3524,35 @@ function ProductCard({
             width: '100%',
           }}
         >
-          <h4 style={{ margin: 0, fontSize: isMobile ? 15 : 22, lineHeight: 1.18, fontWeight: 850 }}>
+          <h4 style={{ margin: 0, fontSize: isMobile ? 14 : 18, lineHeight: 1.16, fontWeight: 850, minHeight: isMobile ? 34 : 42, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
             {product.name}
           </h4>
         </button>
 
-        {product.model_po ? (
-          <p style={{ margin: '5px 0 0', color: '#6b7280', fontSize: isMobile ? 11 : 12, fontWeight: 800 }}>
-            Modelo/PO: {product.model_po}
-          </p>
-        ) : null}
-
-        <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {[
-            ['sizes', 'Tallas', hasSizeStock],
-            ['package', 'Paquete', hasPackageStock],
-          ].filter(([, , enabled]) => enabled || isCompletelyOut).map(([key, label, enabled]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => enabled && setPickerMode(key)}
-              disabled={!enabled}
-              style={{
-                border: pickerMode === key ? '2px solid #111315' : '1px solid #d1d5db',
-                background: !enabled ? '#f3f4f6' : pickerMode === key ? '#111315' : '#fff',
-                color: !enabled ? '#9ca3af' : pickerMode === key ? '#fff' : '#111315',
-                borderRadius: 999,
-                padding: isMobile ? '6px 10px' : '7px 12px',
-                fontSize: isMobile ? 11 : 12,
-                fontWeight: 900,
-                cursor: enabled ? 'pointer' : 'not-allowed',
-              }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {isMobile ? (
-          <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
-            {!specialClientSession?.active ? (
-              <div style={{ display: 'grid', gap: 5, gridTemplateColumns: 'repeat(3, minmax(0, 1fr))' }}>
-                <div style={{ background: '#f8fafc', borderRadius: 10, padding: '7px 8px', border: '1px solid #e5e7eb', minWidth: 0 }}>
-                  <div style={{ fontSize: 9, color: '#6b7280', fontWeight: 800 }}>NORMAL</div>
-                  <div style={{ fontWeight: 900, fontSize: 13 }}>{mxn(visiblePrice)}</div>
-                </div>
-                <div style={{ background: '#eff6ff', borderRadius: 10, padding: '7px 8px', border: '1px solid #bfdbfe', minWidth: 0 }}>
-                  <div style={{ fontSize: 9, color: '#1d4ed8', fontWeight: 800 }}>3+ PZ</div>
-                  <div style={{ fontWeight: 900, fontSize: 13 }}>{mxn(visibleTier3Price)}</div>
-                </div>
-                <div style={{ background: '#ecfdf5', borderRadius: 10, padding: '7px 8px', border: '1px solid #a7f3d0', minWidth: 0 }}>
-                  <div style={{ fontSize: 9, color: '#047857', fontWeight: 800 }}>10+ PZ</div>
-                  <div style={{ fontWeight: 900, fontSize: 13 }}>{mxn(visibleTier10Price)}</div>
-                </div>
+        <div style={{ display: 'grid', gap: 6, marginTop: 'auto' }}>
+          {!specialClientSession?.active ? (
+            <>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: isMobile ? 15 : 17, color: product.is_offer ? '#dc2626' : '#111315' }}>
+                  {product.is_offer ? 'Oferta ' : ''}{mxn(visiblePrice)}
+                </strong>
+                <span style={{ color: '#6b7280', fontSize: isMobile ? 11 : 12, fontWeight: 800 }}>
+                  3+ {mxn(visibleTier3Price)}
+                </span>
               </div>
-            ) : specialPriceUnlocked ? (
-              <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 10, padding: 9, fontSize: 12, color: '#065f46', fontWeight: 800 }}>
-                Precio especial activo para cliente {specialClientSession.client_tier}: {mxn(visibleSpecialPrice)}
-              </div>
-            ) : (
-              <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 10, padding: 9, fontSize: 12, color: '#9a3412', fontWeight: 800 }}>
-                Precio Plata se activa al completar 10 piezas.
-              </div>
-            )}
-
-            {pickerMode === 'package' && hasPackageStock ? (
-              <div style={{ border: '1px solid #e5dfd4', borderRadius: 12, padding: 9, background: '#fbfaf7', display: 'grid', gap: 8, minWidth: 0 }}>
-                <div style={{ display: 'grid', gap: 2 }}>
-                  <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 900 }}>Entallado</span>
-                  <strong style={{ fontSize: 12, lineHeight: 1.15, overflowWrap: 'anywhere' }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</strong>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                  <span style={{ fontSize: 10, color: '#6b7280', fontWeight: 900 }}>Precio c/u</span>
-                  <strong style={{ fontSize: 13 }}>{mxn(packageUnitPrice)}</strong>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectPackageSizes((value) => !value)
-                    setPackageSelection({})
-                    setPackageReady(true)
-                  }}
-                  style={{
-                    ...styles.buttonSecondary,
-                    minHeight: 34,
-                    borderRadius: 999,
-                    padding: '7px 10px',
-                    fontSize: 11,
-                    borderColor: '#2563eb',
-                    background: selectPackageSizes ? '#2563eb' : '#eff6ff',
-                    color: selectPackageSizes ? '#fff' : '#1d4ed8',
-                  }}
-                >
-                  Seleccionar tallas
-                </button>
-                {selectPackageSizes ? (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {packageSizeOptions.map(({ size, max }) => (
-                      <div key={size} style={{ display: 'grid', gap: 6, padding: 7, border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff', minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
-                          <strong style={{ fontSize: 13 }}>{size}</strong>
-                          <span style={{ color: '#6b7280', fontSize: 11, fontWeight: 900 }}>max {max}</span>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '30px minmax(28px, 1fr) 30px', alignItems: 'center', border: '1px solid #d1d5db', borderRadius: 999, overflow: 'hidden', background: '#fff' }}>
-                          <button type="button" onClick={() => updatePackageSelection(size, Number(packageSelection[size] || 0) - 1)} disabled={max <= 0 || Number(packageSelection[size] || 0) <= 0} style={{ border: 'none', background: '#fff', height: 32, cursor: max > 0 ? 'pointer' : 'not-allowed', padding: 0 }}><Minus size={13} /></button>
-                          <input
-                            type="number"
-                            min="0"
-                            max={max}
-                            value={packageSelection[size] || 0}
-                            onChange={(event) => updatePackageSelection(size, event.target.value)}
-                            style={{ border: 'none', outline: 'none', textAlign: 'center', fontSize: 14, fontWeight: 900, minWidth: 0, width: '100%', padding: 0 }}
-                          />
-                          <button type="button" onClick={() => updatePackageSelection(size, Number(packageSelection[size] || 0) + 1)} disabled={max <= 0 || Number(packageSelection[size] || 0) >= max} style={{ border: 'none', background: '#fff', height: 32, cursor: max > 0 ? 'pointer' : 'not-allowed', padding: 0 }}><Plus size={13} /></button>
-                        </div>
-                      </div>
-                    ))}
-                    <p style={{ margin: 0, color: '#6b7280', fontSize: 12, fontWeight: 800 }}>
-                      Seleccionadas: {selectedPackagePieces} pz. En la bolsa puedes mandar tallas inmediato y dejar el resto apartado.
-                    </p>
-                  </div>
-                ) : (
-                  <p style={{ margin: 0, color: '#6b7280', fontSize: 12, fontWeight: 800 }}>
-                    Paquete completo: {packageQty} x {getPackagePieces(product)} pz
-                  </p>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
-                    <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ border: 'none', background: '#fff', width: 30, height: 30, cursor: 'pointer', padding: 0 }}><Minus size={13} /></button>
-                    <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ width: 34, height: 30, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900, fontSize: 14 }} />
-                    <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ border: 'none', background: '#fff', width: 30, height: 30, cursor: 'pointer', padding: 0 }}><Plus size={13} /></button>
-                  </div>
-                  <button type="button" onClick={addPackage} disabled={packageStock <= 0 || !packageReady || (selectPackageSizes && selectedPackagePieces <= 0)} style={{ ...styles.buttonPrimary, minHeight: 34, borderRadius: 999, padding: '7px 10px', fontSize: 11, opacity: packageStock <= 0 || !packageReady || (selectPackageSizes && selectedPackagePieces <= 0) ? 0.5 : 1 }}>
-                    Agregar producto
-                  </button>
-                </div>
-              </div>
-            ) : hasSizeStock ? (
-              <>
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              {(product.sizes || []).slice(0, 8).map((size) => {
-                const qty = Number(product.stock?.[size] || 0)
-                const selected = activeSize === size
-                return (
-                  <button
-                    key={size}
-                    type="button"
-                    onClick={() => qty > 0 && setSize(size)}
-                    disabled={qty <= 0}
-                    style={{
-                      border: selected ? '2px solid #111315' : '1px solid ' + (qty > 0 ? '#d1d5db' : '#e5e7eb'),
-                      color: qty > 0 ? '#111315' : '#9ca3af',
-                      background: qty > 0 ? '#fff' : '#f3f4f6',
-                      borderRadius: 999,
-                      padding: '5px 8px',
-                      fontSize: 11,
-                      fontWeight: 800,
-                      cursor: qty > 0 ? 'pointer' : 'not-allowed',
-                    }}
-                  >
-                    {size} · {qty}
-                  </button>
-                )
-              })}
-            </div>
-
-            {activeSize ? (
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', border: '1px solid #d8d3c8', borderRadius: 999, overflow: 'hidden' }}>
-                  <button type="button" onClick={() => setQuantity((current.quantity || 0) - 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}>
-                    <Minus size={14} />
-                  </button>
-                  <input
-                    type="number"
-                    min="0"
-                    max={stockForSelected}
-                    value={current.quantity}
-                    onChange={(event) => setQuantity(event.target.value)}
-                    style={{ width: 42, height: 32, textAlign: 'center', border: 'none', outline: 'none', fontWeight: 900 }}
-                  />
-                  <button type="button" onClick={() => setQuantity((current.quantity || 0) + 1)} style={{ border: 'none', background: '#fff', width: 32, height: 32, cursor: 'pointer' }}>
-                    <Plus size={14} />
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => onAddToCart(product)}
-                  disabled={!activeSize || Number(current.quantity || 0) <= 0}
-                  style={{
-                    ...styles.buttonPrimary,
-                    minHeight: 36,
-                    borderRadius: 999,
-                    padding: '8px 12px',
-                    fontSize: 12,
-                    opacity: !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
-                    cursor: !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer',
-                  }}
-                >
-                  Agregar producto
-                </button>
-              </div>
-            ) : null}
-              </>
-            ) : (
-              <p style={{ margin: 0, color: '#991b1b', fontWeight: 900, fontSize: 12 }}>Producto agotado.</p>
-            )}
-          </div>
-        ) : (
-          <>
-            <p style={{ display: 'none' }}>{product.description || 'Sin descripcion'}</p>
-
-            <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
-              {!specialClientSession?.active ? (
-                <div style={{ display: 'grid', gap: 6, gridTemplateColumns: 'repeat(3, 1fr)' }}>
-                  <div style={{ background: '#f8fafc', borderRadius: 12, padding: 8, border: '1px solid #e5e7eb' }}>
-                    <div style={{ fontSize: 10, color: '#6b7280', fontWeight: 700 }}>NORMAL</div>
-                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(visiblePrice)}</div>
-                  </div>
-                  <div style={{ background: '#eff6ff', borderRadius: 12, padding: 8, border: '1px solid #bfdbfe' }}>
-                    <div style={{ fontSize: 10, color: '#1d4ed8', fontWeight: 700 }}>3+ PZ</div>
-                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(visibleTier3Price)}</div>
-                  </div>
-                  <div style={{ background: '#ecfdf5', borderRadius: 12, padding: 8, border: '1px solid #a7f3d0' }}>
-                    <div style={{ fontSize: 10, color: '#047857', fontWeight: 700 }}>10+ PZ</div>
-                    <div style={{ fontWeight: 800, fontSize: 14 }}>{mxn(visibleTier10Price)}</div>
-                  </div>
-                </div>
-              ) : specialPriceUnlocked ? (
-                <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: 12, padding: 10, fontSize: 13, color: '#065f46', fontWeight: 700 }}>
-                  Precio especial activo para cliente {specialClientSession.client_tier}: {mxn(visibleSpecialPrice)}
-                </div>
-              ) : (
-                <div style={{ background: '#fff7ed', border: '1px solid #fed7aa', borderRadius: 12, padding: 10, fontSize: 13, color: '#9a3412', fontWeight: 700 }}>
-                  Precio Plata se activa al completar 10 piezas.
-                </div>
-              )}
-            </div>
-
-            {pickerMode === 'package' && hasPackageStock ? (
-              <div style={{ marginTop: 10, border: '1px solid #e5dfd4', borderRadius: 12, padding: 12, background: '#fbfaf7', display: 'grid', gap: 10 }}>
-                <div style={{ display: 'grid', gap: 8, gridTemplateColumns: 'repeat(3, 1fr)' }}>
-                  <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Entallado</small><div style={{ fontWeight: 900 }}>{product.package_fit || product.package_breakdown || 'Por confirmar'}</div></div>
-                  <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Precio c/u</small><div style={{ fontWeight: 900 }}>{mxn(packageUnitPrice)}</div></div>
-                  <div><small style={{ color: '#6b7280', fontWeight: 800 }}>Paquetes</small><div style={{ fontWeight: 900 }}>{packageStock}</div></div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectPackageSizes((value) => !value)
-                    setPackageSelection({})
-                    setPackageReady(true)
-                  }}
-                  style={{
-                    ...styles.buttonSecondary,
-                    justifySelf: 'start',
-                    borderColor: '#2563eb',
-                    background: selectPackageSizes ? '#2563eb' : '#eff6ff',
-                    color: selectPackageSizes ? '#fff' : '#1d4ed8',
-                  }}
-                >
-                  Seleccionar tallas
-                </button>
-                {selectPackageSizes ? (
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 8 }}>
-                      {packageSizeOptions.map(({ size, max }) => (
-                        <label key={size} style={{ display: 'grid', gap: 5, fontWeight: 900 }}>
-                          {size} <span style={{ color: '#6b7280', fontSize: 12 }}>max {max}</span>
-                          <input
-                            type="number"
-                            min="0"
-                            max={max}
-                            value={packageSelection[size] || ''}
-                            onChange={(event) => updatePackageSelection(size, event.target.value)}
-                            placeholder="0"
-                            style={{ ...styles.input, padding: '10px 12px', textAlign: 'center' }}
-                          />
-                        </label>
-                      ))}
-                    </div>
-                    <p style={{ margin: 0, color: '#6b7280', fontSize: 13, fontWeight: 800 }}>
-                      Seleccionadas: {selectedPackagePieces} pz. En la bolsa puedes mandar tallas inmediato y dejar el resto apartado.
-                    </p>
-                  </div>
-                ) : (
-                  <p style={{ margin: 0, color: '#6b7280', fontSize: 13, fontWeight: 800 }}>
-                    Se agregara el paquete completo: {packageQty} x {getPackagePieces(product)} pz.
-                  </p>
-                )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" onClick={() => setPackageQuantity(packageQty - 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}><Minus size={14} /></button>
-                  <input type="number" min="1" max={packageStock} value={packageQty} onChange={(event) => setPackageQuantity(event.target.value)} style={{ ...styles.input, width: 86, textAlign: 'center', padding: '12px 14px' }} />
-                  <button type="button" onClick={() => setPackageQuantity(packageQty + 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}><Plus size={14} /></button>
-                  <button type="button" onClick={addPackage} disabled={packageStock <= 0 || !packageReady || (selectPackageSizes && selectedPackagePieces <= 0)} style={{ ...styles.buttonPrimary, flex: 1, opacity: packageStock <= 0 || !packageReady || (selectPackageSizes && selectedPackagePieces <= 0) ? 0.5 : 1 }}>Agregar producto</button>
-                </div>
-              </div>
-            ) : hasSizeStock ? (
-              <>
-            <div style={{ marginTop: 10 }}>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {(product.sizes || []).map((size) => {
-                  const qty = Number(product.stock?.[size] || 0)
-                  const selected = activeSize === size
-                  return (
-                    <button
-                      key={size}
-                      type="button"
-                      onClick={() => qty > 0 && setSize(size)}
-                      disabled={qty <= 0}
-                      style={{
-                        border: selected ? '2px solid #0f172a' : '1px solid #d1d5db',
-                        borderRadius: 12,
-                        background: qty > 0 ? '#fff' : '#f3f4f6',
-                        padding: '8px 10px',
-                        minWidth: 54,
-                        cursor: qty > 0 ? 'pointer' : 'not-allowed',
-                        opacity: qty > 0 ? 1 : 0.6,
-                        fontSize: 13,
-                      }}
-                    >
-                      <div style={{ fontWeight: 700 }}>{size}</div>
-                      <div style={{ fontSize: 10, color: '#6b7280', marginTop: 2 }}>{qty} pz</div>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            {activeSize ? (
-              <div style={{ marginTop: 10 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <button type="button" onClick={() => setQuantity((current.quantity || 0) - 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}>
-                    <Minus size={14} />
-                  </button>
-                  <input
-                    type="number"
-                    min="0"
-                    max={stockForSelected}
-                    value={current.quantity}
-                    onChange={(event) => setQuantity(event.target.value)}
-                    style={{ ...styles.input, width: 86, textAlign: 'center', padding: '12px 14px' }}
-                  />
-                  <button type="button" onClick={() => setQuantity((current.quantity || 0) + 1)} style={{ ...styles.buttonSecondary, padding: '8px 10px' }}>
-                    <Plus size={14} />
-                  </button>
-                </div>
-              </div>
-            ) : null}
-
+              <span style={{ color: '#047857', fontSize: isMobile ? 11 : 12, fontWeight: 850 }}>
+                10+ {mxn(visibleTier10Price)}
+              </span>
             </>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={() => onAddToCart(product)}
-              disabled={pickerMode !== 'sizes' || !activeSize || Number(current.quantity || 0) <= 0}
-              style={{
-                ...styles.buttonPrimary,
-                width: '100%',
-                marginTop: 12,
-                opacity: pickerMode !== 'sizes' || !activeSize || Number(current.quantity || 0) <= 0 ? 0.5 : 1,
-                cursor: pickerMode !== 'sizes' || !activeSize || Number(current.quantity || 0) <= 0 ? 'not-allowed' : 'pointer',
-                fontSize: 15,
-              }}
-            >
-              Agregar producto
-            </button>
-          </>
-        )}
+          ) : (
+            <strong style={{ fontSize: isMobile ? 14 : 16, color: specialPriceUnlocked ? '#047857' : '#9a3412' }}>
+              {specialPriceUnlocked ? 'Especial ' + mxn(visibleSpecialPrice) : 'Plata desde 10 piezas'}
+            </strong>
+          )}
+          <span style={{ color: !isCompletelyOut ? '#6b7280' : '#991b1b', fontSize: isMobile ? 11 : 12, fontWeight: 850 }}>
+            {availablePiecesText}{hasPackageStock ? ' · paquete disponible' : ''}
+          </span>
+        </div>
       </div>
     </article>
   )
@@ -3563,6 +3606,77 @@ function HomeFeaturedProductCard({ product, isMobile, onOpenGallery, onOpenQuick
   )
 }
 
+function getSimilarProducts(product, products = [], limit = 8) {
+  if (!product) return []
+  return [...products]
+    .filter((item) => String(item.id) !== String(product.id))
+    .filter(productHasVisibleStock)
+    .map((item) => {
+      const score =
+        (item.category === product.category ? 60 : 0) +
+        (item.audience === product.audience ? 18 : 0) +
+        (item.brand === product.brand ? 12 : 0) +
+        (item.subcategory && item.subcategory === product.subcategory ? 8 : 0) +
+        (item.quality && item.quality === product.quality ? 6 : 0) +
+        Number(item.sales_count || 0)
+      return { item, score }
+    })
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score || new Date(b.item.created_at || 0).getTime() - new Date(a.item.created_at || 0).getTime())
+    .slice(0, limit)
+    .map(({ item }) => item)
+}
+
+function SimilarProductsSection({ products, isMobile, onOpenProduct }) {
+  if (!products?.length) return null
+
+  return (
+    <div style={{ borderTop: '1px solid #ece6da', paddingTop: isMobile ? 18 : 24 }}>
+      <h3 style={{ margin: 0, fontSize: isMobile ? 22 : 28 }}>Productos similares</h3>
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))',
+          gap: isMobile ? 10 : 14,
+          marginTop: 14,
+        }}
+      >
+        {products.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onOpenProduct?.(item)}
+            style={{
+              border: 'none',
+              background: 'transparent',
+              padding: 0,
+              textAlign: 'left',
+              cursor: 'pointer',
+              minWidth: 0,
+            }}
+          >
+            <div style={{ aspectRatio: '4 / 5', background: '#ebe6dc', overflow: 'hidden', borderRadius: 8 }}>
+              {getCover(item) ? (
+                <img src={getCover(item)} alt={item.name} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ height: '100%', display: 'grid', placeItems: 'center' }}>
+                  <ImageIcon size={30} color="#9ca3af" />
+                </div>
+              )}
+            </div>
+            <strong style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginTop: 8, minHeight: 38, fontSize: isMobile ? 13 : 14, lineHeight: 1.25 }}>
+              {item.name}
+            </strong>
+            <span style={{ display: 'block', marginTop: 4, color: item.is_offer ? '#dc2626' : '#111315', fontWeight: 900, fontSize: isMobile ? 13 : 14 }}>
+              {mxn(getProductBasePrice(item))}
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function ProductQuickView({
   open,
   product,
@@ -3576,6 +3690,8 @@ function ProductQuickView({
   specialClientSession,
   totalPieces,
   getCartUnitPrice,
+  relatedProducts = [],
+  onOpenRelatedProduct,
 }) {
   const [imageIndex, setImageIndex] = useState(0)
   const [packageQty, setPackageQty] = useState(1)
@@ -4093,6 +4209,12 @@ function ProductQuickView({
               {product.description || 'Prenda seleccionada para apartado. Revisa talla, disponibilidad y precio antes de agregarla a tu bolsa.'}
             </p>
           </div>
+
+          <SimilarProductsSection
+            products={relatedProducts}
+            isMobile={isMobile}
+            onOpenProduct={onOpenRelatedProduct}
+          />
         </div>
       </section>
     </div>
@@ -6159,8 +6281,8 @@ function DenimClickLogo({ variant = 'light', size = 'md' }) {
       }}
     >
       <span style={wordStyle}>
-        {'DENIM'.split('').map((letter) => (
-          <span key={letter} style={letterStyle}>{letter}</span>
+        {'DENIM'.split('').map((letter, index) => (
+          <span key={'denim-' + letter + '-' + index} style={letterStyle}>{letter}</span>
         ))}
       </span>
 
@@ -6197,8 +6319,8 @@ function DenimClickLogo({ variant = 'light', size = 'md' }) {
       </svg>
 
       <span style={wordStyle}>
-        {'CLICK'.split('').map((letter) => (
-          <span key={letter} style={letterStyle}>{letter}</span>
+        {'CLICK'.split('').map((letter, index) => (
+          <span key={'click-' + letter + '-' + index} style={letterStyle}>{letter}</span>
         ))}
       </span>
     </span>
@@ -6858,7 +6980,7 @@ function StoreView({
   const [openMegaMenu, setOpenMegaMenu] = useState(false)
   const [megaAudience, setMegaAudience] = useState('Hombre')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [loginOpen, setLoginOpen] = useState(() => !specialClientSession?.active)
+  const [loginOpen, setLoginOpen] = useState(false)
   const [bagOpen, setBagOpen] = useState(false)
   const [orderStatusOpen, setOrderStatusOpen] = useState(false)
   const [statusInitialQuery, setStatusInitialQuery] = useState('')
@@ -7107,6 +7229,9 @@ function StoreView({
     const start = (currentPage - 1) * pageSize
     return filteredProducts.slice(start, start + pageSize)
   }, [filteredProducts, currentPage, pageSize])
+  const relatedQuickProducts = useMemo(() => {
+    return getSimilarProducts(quickViewProduct, activeProducts, isMobile ? 6 : 8)
+  }, [quickViewProduct, activeProducts, isMobile])
 
   useEffect(() => {
     if (!prefetchProductImages) return undefined
@@ -7841,8 +7966,8 @@ function StoreView({
                 style={{
                   display: 'grid',
                   gap: isMobile ? 12 : 22,
-                  gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(4, minmax(0, 1fr))',
-                  alignItems: 'start',
+                  gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(280px, 1fr))',
+                  alignItems: 'stretch',
                 }}
               >
                 {paginatedProducts.map((product) => (
@@ -7894,6 +8019,8 @@ function StoreView({
         specialClientSession={specialClientSession}
         totalPieces={totalPieces}
         getCartUnitPrice={getCartUnitPrice}
+        relatedProducts={relatedQuickProducts}
+        onOpenRelatedProduct={openQuickViewProduct}
       />
 
       <CartDrawer
@@ -8782,11 +8909,12 @@ export default function App() {
     }
   }, [])
 
+  const storeProducts = useMemo(() => mergeDemoProducts(products), [products])
   const customFits = useMemo(() => {
     return uniqueValues(
-      products.map((p) => p.subcategory).filter((sub) => sub && !JEANS_FITS.includes(sub))
+      storeProducts.map((p) => p.subcategory).filter((sub) => sub && !JEANS_FITS.includes(sub))
     )
-  }, [products])
+  }, [storeProducts])
 
   const totalPieces = useMemo(() => getCartTotalPieces(cart), [cart])
   const tier = currentTier(totalPieces)
@@ -9174,6 +9302,11 @@ export default function App() {
       return
     }
 
+    if (cart.some((item) => item.product?.demo)) {
+      alert('Los productos de prueba son solo para revisar dimensiones y funcionamiento local. Quita los demo de la bolsa antes de solicitar un apartado real.')
+      return
+    }
+
     const isRegisteredClient = Boolean(specialClientSession?.active)
     const requestCustomerName = isRegisteredClient
       ? String(specialClientSession.name || specialClientSession.client_code || '').trim()
@@ -9518,7 +9651,7 @@ export default function App() {
       {route === 'store' ? (
         <StoreView
           isMobile={isMobile}
-          products={products}
+          products={storeProducts}
           search={search}
           setSearch={setSearch}
           storeAudience={storeAudience}
