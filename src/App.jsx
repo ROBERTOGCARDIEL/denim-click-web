@@ -1435,6 +1435,14 @@ function demoProductImage(label, bg = '#ece7df', accent = '#111315') {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
 }
 
+function demoProductImages(label, bg = '#ece7df', accent = '#111315') {
+  return [
+    demoProductImage(label, bg, accent),
+    demoProductImage(label + ' V2', '#f6f4ef', accent),
+    demoProductImage(label + ' V3', bg, '#374151'),
+  ]
+}
+
 const DEMO_PRODUCTS = [
   {
     id: 'demo-jeans-straight',
@@ -1445,7 +1453,7 @@ const DEMO_PRODUCTS = [
     brand: 'Denim Click',
     quality: 'JEANS LINEA',
     stock: { 28: 3, 30: 5, 32: 4, 34: 2 },
-    images: [demoProductImage('JEANS', '#e9eef3', '#16324f')],
+    images: demoProductImages('JEANS', '#e9eef3', '#16324f'),
     price: 489,
     price_tier3: 389,
     price_tier10: 289,
@@ -1464,7 +1472,7 @@ const DEMO_PRODUCTS = [
     brand: 'Denim Click',
     quality: 'PYP',
     stock: { CH: 5, M: 7, G: 4, XL: 2 },
-    images: [demoProductImage('PLAYERA', '#f4f1ea', '#3f3f46')],
+    images: demoProductImages('PLAYERA', '#f4f1ea', '#3f3f46'),
     price: 375,
     price_tier3: 275,
     price_tier10: 175,
@@ -1479,7 +1487,7 @@ const DEMO_PRODUCTS = [
     brand: 'Denim Click',
     quality: 'CHM L',
     stock: { CH: 2, M: 3, G: 2 },
-    images: [demoProductImage('CHAMARRA', '#e7f0ef', '#0f766e')],
+    images: demoProductImages('CHAMARRA', '#e7f0ef', '#0f766e'),
     price: 725,
     price_tier3: 625,
     price_tier10: 525,
@@ -1494,7 +1502,7 @@ const DEMO_PRODUCTS = [
     brand: 'Denim Click',
     quality: 'SUD',
     stock: { CH: 4, M: 4, G: 3 },
-    images: [demoProductImage('SUDADERA', '#eee7f2', '#6d28d9')],
+    images: demoProductImages('SUDADERA', '#eee7f2', '#6d28d9'),
     price: 555,
     price_tier3: 455,
     price_tier10: 355,
@@ -1509,7 +1517,7 @@ const DEMO_PRODUCTS = [
     brand: 'Denim Click',
     quality: 'JEANS PREMIUM',
     stock: { 3: 2, 5: 4, 7: 3, 9: 2 },
-    images: [demoProductImage('SKINNY', '#edf2fb', '#1d4ed8')],
+    images: demoProductImages('SKINNY', '#edf2fb', '#1d4ed8'),
     price: 515,
     price_tier3: 415,
     price_tier10: 315,
@@ -1524,7 +1532,7 @@ const DEMO_PRODUCTS = [
     brand: 'Denim Click',
     quality: 'BOLSAS LINEA',
     stock: { UNI: 6 },
-    images: [demoProductImage('BOLSA', '#f1eee8', '#92400e')],
+    images: demoProductImages('BOLSA', '#f1eee8', '#92400e'),
     price: 499,
     price_tier3: 399,
     price_tier10: 299,
@@ -2812,6 +2820,7 @@ function ProductMediaCarousel({
   const [imageIndex, setImageIndex] = useState(0)
   const eagerFirstImage = variant === 'quick' || (!isMobile && variant !== 'card')
   const touchStartX = useRef(0)
+  const touchStartY = useRef(0)
   const swipedRef = useRef(false)
   const carouselRef = useRef(null)
   const loadingFullImagesRef = useRef(false)
@@ -2876,6 +2885,15 @@ function ProductMediaCarousel({
     setImageIndex((nextIndex + images.length) % images.length)
   }
 
+  const handleHorizontalSwipe = (startX, startY, endX, endY) => {
+    const diff = startX - endX
+    const verticalDiff = Math.abs(startY - endY)
+    if (Math.abs(diff) < 34 || Math.abs(diff) < verticalDiff * 1.15) return false
+    swipedRef.current = true
+    goTo(imageIndex + (diff > 0 ? 1 : -1))
+    return true
+  }
+
   const openDetail = () => {
     if (swipedRef.current) {
       swipedRef.current = false
@@ -2903,15 +2921,34 @@ function ProductMediaCarousel({
       }}
       onTouchStart={(event) => {
         touchStartX.current = event.touches?.[0]?.clientX || 0
+        touchStartY.current = event.touches?.[0]?.clientY || 0
         swipedRef.current = false
         ensureFullImages()
       }}
       onTouchEnd={(event) => {
         const endX = event.changedTouches?.[0]?.clientX || touchStartX.current
-        const diff = touchStartX.current - endX
-        if (Math.abs(diff) < 34) return
-        swipedRef.current = true
-        goTo(imageIndex + (diff > 0 ? 1 : -1))
+        const endY = event.changedTouches?.[0]?.clientY || touchStartY.current
+        handleHorizontalSwipe(touchStartX.current, touchStartY.current, endX, endY)
+      }}
+      onPointerDown={(event) => {
+        if (!isMobile || event.pointerType !== 'mouse') return
+        touchStartX.current = event.clientX || 0
+        touchStartY.current = event.clientY || 0
+        swipedRef.current = false
+      }}
+      onPointerUp={(event) => {
+        if (!isMobile || event.pointerType !== 'mouse') return
+        handleHorizontalSwipe(touchStartX.current, touchStartY.current, event.clientX || touchStartX.current, event.clientY || touchStartY.current)
+      }}
+      onMouseDown={(event) => {
+        if (!isMobile) return
+        touchStartX.current = event.clientX || 0
+        touchStartY.current = event.clientY || 0
+        swipedRef.current = false
+      }}
+      onMouseUp={(event) => {
+        if (!isMobile) return
+        handleHorizontalSwipe(touchStartX.current, touchStartY.current, event.clientX || touchStartX.current, event.clientY || touchStartY.current)
       }}
       style={{
         width: '100%',
@@ -3059,7 +3096,7 @@ function ProductMediaCarousel({
       {isMobile && variant === 'card' ? (
         <button
           type="button"
-          aria-label={'Agregar rapido ' + product.name}
+          aria-label={'Abrir opciones de ' + product.name}
           onClick={(event) => {
             event.stopPropagation()
             onOpenQuickView(images.length > initialImages.length ? { ...product, images } : product)
@@ -3067,7 +3104,7 @@ function ProductMediaCarousel({
           style={{
             position: 'absolute',
             right: 10,
-            top: 10,
+            bottom: 10,
             width: 42,
             height: 42,
             borderRadius: 999,
@@ -3701,6 +3738,8 @@ function ProductQuickView({
   const [packageSelection, setPackageSelection] = useState({})
   const [packageReady, setPackageReady] = useState(true)
   const touchStartX = useRef(0)
+  const touchStartY = useRef(0)
+  const quickViewSwipedRef = useRef(false)
   const detailPanelRef = useRef(null)
   const autoScrollRef = useRef(null)
   const images = getProductImageList(product)
@@ -3764,6 +3803,15 @@ function ProductQuickView({
   const goTo = (nextIndex) => {
     if (!images.length) return
     setImageIndex((nextIndex + images.length) % images.length)
+  }
+
+  const handleQuickViewSwipe = (startX, startY, endX, endY) => {
+    const diff = startX - endX
+    const verticalDiff = Math.abs(startY - endY)
+    if (Math.abs(diff) <= 34 || Math.abs(diff) < verticalDiff * 1.15) return false
+    quickViewSwipedRef.current = true
+    goTo(imageIndex + (diff > 0 ? 1 : -1))
+    return true
   }
 
   const setSize = (size) => {
@@ -3894,11 +3942,33 @@ function ProductQuickView({
           }}
           onTouchStart={(event) => {
             touchStartX.current = event.touches?.[0]?.clientX || 0
+            touchStartY.current = event.touches?.[0]?.clientY || 0
+            quickViewSwipedRef.current = false
           }}
           onTouchEnd={(event) => {
             const endX = event.changedTouches?.[0]?.clientX || touchStartX.current
-            const diff = touchStartX.current - endX
-            if (Math.abs(diff) > 34) goTo(imageIndex + (diff > 0 ? 1 : -1))
+            const endY = event.changedTouches?.[0]?.clientY || touchStartY.current
+            handleQuickViewSwipe(touchStartX.current, touchStartY.current, endX, endY)
+          }}
+          onPointerDown={(event) => {
+            if (!isMobile || event.pointerType !== 'mouse') return
+            touchStartX.current = event.clientX || 0
+            touchStartY.current = event.clientY || 0
+            quickViewSwipedRef.current = false
+          }}
+          onPointerUp={(event) => {
+            if (!isMobile || event.pointerType !== 'mouse') return
+            handleQuickViewSwipe(touchStartX.current, touchStartY.current, event.clientX || touchStartX.current, event.clientY || touchStartY.current)
+          }}
+          onMouseDown={(event) => {
+            if (!isMobile) return
+            touchStartX.current = event.clientX || 0
+            touchStartY.current = event.clientY || 0
+            quickViewSwipedRef.current = false
+          }}
+          onMouseUp={(event) => {
+            if (!isMobile) return
+            handleQuickViewSwipe(touchStartX.current, touchStartY.current, event.clientX || touchStartX.current, event.clientY || touchStartY.current)
           }}
         >
           {images.length ? (
@@ -3908,6 +3978,10 @@ function ProductQuickView({
                   key={image + idx}
                   type="button"
                   onClick={() => {
+                    if (quickViewSwipedRef.current) {
+                      quickViewSwipedRef.current = false
+                      return
+                    }
                     if (typeof onOpenGallery === 'function') onOpenGallery(normalizeProductImages(product), imageIndex)
                   }}
                   style={{ width: '100%', height: '100%', flex: '0 0 100%', border: 'none', padding: 0, background: 'transparent', cursor: 'zoom-in' }}
@@ -4163,7 +4237,7 @@ function ProductQuickView({
                   }}
                   onClick={addPackageAndClose}
                 >
-                  Agregar producto
+                  Agregar al carrito
                 </button>
               </div>
             ) : (
@@ -4201,7 +4275,7 @@ function ProductQuickView({
             }}
           >
             <ShoppingBag size={18} />
-            Agregar a bolsa
+            Agregar al carrito
           </button>
 
           <div style={{ borderTop: '1px solid #ece6da', paddingTop: 18 }}>
